@@ -2,7 +2,13 @@
 
 import { useMemo, useState } from "react";
 
-function getPreviewSource(input) {
+type PreviewSource =
+  | { type: "empty" }
+  | { type: "invalid" }
+  | { type: "video"; src: string }
+  | { type: "iframe"; src: string; title: string };
+
+function getPreviewSource(input: string): PreviewSource {
   const trimmedInput = input.trim();
 
   if (!trimmedInput) {
