@@ -71,6 +71,24 @@ That script creates:
 - indexes for lookup and vector search
 - private Supabase Storage buckets
 
+## Testing
+
+Run the local unit tests without connecting to Supabase:
+
+```bash
+python -m unittest storage.tests.test_pipeline_units
+```
+
+After setting your environment variables and running `storage/schema.sql` in
+Supabase, run the smoke test:
+
+```bash
+python storage/smoke_test.py
+```
+
+The smoke test creates a fake completed video row, retrieves it by URL and file
+hash, runs a pgvector similarity query, then deletes the test row.
+
 ## Environment Variables
 
 Use `storage/env.example` as the template:
@@ -115,26 +133,6 @@ raw_video_path = videos/{video_id}/raw/original.mp4
 The backend can generate a short-lived signed URL when the frontend needs to
 view a private asset.
 
-## Why One Table
-
-Because the app only needs to retrieve previously analyzed videos, one table is
-enough right now.
-
-The backend workflow becomes:
-
-1. User submits a URL.
-2. Backend checks `videos.original_url`.
-3. If found, return the saved analysis.
-4. If not found, analyze the video.
-5. Save one completed row in `videos`.
-6. Future requests can reuse that row.
-
-`file_sha256` is optional but useful. It identifies the actual downloaded video
-file. Two different URLs can point to the exact same video, and their
-`file_sha256` would match.
-
-`processing_status` was removed because incomplete videos are not saved here.
-Queue/worker state can live in Celery/Redis or backend logs.
 
 ## Similarity Search
 
