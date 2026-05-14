@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+sqlalchemy[asyncio]
+asyncpg
+pgvector
+pydantic
+pydantic-settings
+python-dotenv
+python-multipart
+supabase
