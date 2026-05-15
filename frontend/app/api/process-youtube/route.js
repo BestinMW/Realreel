@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server";
 import path from "path";
 import fs from "fs";
 import os from "os";
@@ -12,7 +11,14 @@ const ONE_FRAME_PER_SECOND = 1;
 const STORAGE_BUCKETS = {
   rawVideos: process.env.RAW_VIDEOS_BUCKET || "raw-videos",
   audio: process.env.AUDIO_BUCKET || "audio",
+  transcripts: process.env.TRANSCRIPTS_BUCKET || "transcripts",
 };
+const OPENAI_TRANSCRIPTION_MODEL =
+  process.env.OPENAI_TRANSCRIPTION_MODEL || "whisper-1";
+const OPENAI_AUDIO_FILE_LIMIT_BYTES = 25 * 1024 * 1024;
+const TRANSCRIPTION_LEAD_IN_SECONDS = 1;
+const REPO_ROOT = path.resolve(process.cwd(), "..");
+const UPLOADS_ROOT = path.join(REPO_ROOT, "tmp", "uploads");
 
 function getFfmpegPath() {
   const binaryName = os.platform() === "win32" ? "ffmpeg.exe" : "ffmpeg";
@@ -80,6 +86,21 @@ function runFfmpeg(command) {
   return new Promise((resolve, reject) => {
     command.on("error", reject).on("end", resolve).run();
   });
+}
+
+async function createAudioWithLeadIn(sourcePath, outputPath) {
+  await runFfmpeg(
+    ffmpeg()
+      .input(`anullsrc=channel_layout=mono:sample_rate=16000`)
+      .inputOptions(["-f", "lavfi", "-t", String(TRANSCRIPTION_LEAD_IN_SECONDS)])
+      .input(sourcePath)
+      .complexFilter("[0:a][1:a]concat=n=2:v=0:a=1[outa]")
+      .outputOptions(["-map", "[outa]"])
+      .audioChannels(1)
+      .audioFrequency(16000)
+      .format("wav")
+      .output(outputPath),
+  );
 }
 
 async function getYtDlp() {
@@ -158,6 +179,48 @@ async function uploadToSupabaseStorage({
   return storagePath;
 }
 
+async function transcribeAudioWithOpenAI(audioPath) {
+  const apiKey = process.env.OPENAI_API_KEY;
+
+  if (!apiKey) {
+    throw new Error(
+      "OpenAI transcription is not configured. Add OPENAI_API_KEY to frontend/.env.local.",
+    );
+  }
+
+  const stats = await fs.promises.stat(audioPath);
+  if (stats.size > OPENAI_AUDIO_FILE_LIMIT_BYTES) {
+    throw new Error(
+      "The extracted audio is larger than OpenAI's 25 MB transcription upload limit.",
+    );
+  }
+
+  const audioBytes = await fs.promises.readFile(audioPath);
+  const formData = new FormData();
+  formData.append(
+    "file",
+    new Blob([audioBytes], { type: "audio/wav" }),
+    "audio.wav",
+  );
+  formData.append("model", OPENAI_TRANSCRIPTION_MODEL);
+  formData.append("response_format", "verbose_json");
+
+  const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(`Failed to transcribe audio with OpenAI: ${details}`);
+  }
+
+  return response.json();
+}
+
 async function findDownloadedVideo(jobDir) {
   const entries = await fs.promises.readdir(jobDir);
   const videos = entries
@@ -186,102 +249,171 @@ async function removeJobDirectory(jobDir) {
 }
 
 export async function POST(request) {
-  let jobDir;
+  const encoder = new TextEncoder();
 
-  try {
-    const { youtubeUrl } = await request.json();
-    const videoId = parseYouTubeUrl(youtubeUrl);
+  return new Response(
+    new ReadableStream({
+      async start(controller) {
+        let jobDir;
 
-    if (!videoId) {
-      return NextResponse.json(
-        { success: false, message: "Paste a valid YouTube video URL." },
-        { status: 400 },
-      );
-    }
+        function send(event) {
+          controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+        }
 
-    const jobId = `${safeSegment(videoId)}-${Date.now()}`;
-    const storagePrefix = `videos/${jobId}`;
-    jobDir = path.join(process.cwd(), "..", "tmp", "uploads", jobId);
-    const videoOutputTemplate = path.join(jobDir, "source.%(ext)s");
-    const audioPath = path.join(jobDir, "audio.wav");
-    const framesDir = path.join(jobDir, "frames");
+        try {
+          send({ type: "progress", progress: 3, stage: "Reading request" });
+          const { youtubeUrl } = await request.json();
+          const videoId = parseYouTubeUrl(youtubeUrl);
 
-    fs.mkdirSync(framesDir, { recursive: true });
+          if (!videoId) {
+            send({
+              type: "error",
+              message: "Paste a valid YouTube video URL.",
+            });
+            return;
+          }
 
-    const ytDlp = await getYtDlp();
-    await ytDlp.execPromise([
-      youtubeUrl.trim(),
-      "--no-playlist",
-      "--ffmpeg-location",
-      getFfmpegDirectory(),
-      "-f",
-      "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best",
-      "--merge-output-format",
-      "mp4",
-      "-o",
-      videoOutputTemplate,
-    ]);
+          const jobId = `${safeSegment(videoId)}-${Date.now()}`;
+          const storagePrefix = `videos/${jobId}`;
+          jobDir = path.join(UPLOADS_ROOT, jobId);
+          const videoOutputTemplate = path.join(jobDir, "source.%(ext)s");
+          const audioPath = path.join(jobDir, "audio.wav");
+          const transcriptionAudioPath = path.join(
+            jobDir,
+            "audio-for-transcript.wav",
+          );
+          const transcriptPath = path.join(jobDir, "transcript.json");
+          const framesDir = path.join(jobDir, "frames");
 
-    const videoPath = await findDownloadedVideo(jobDir);
+          send({ type: "progress", progress: 8, stage: "Preparing workspace" });
+          fs.mkdirSync(framesDir, { recursive: true });
 
-    await runFfmpeg(
-      ffmpeg(videoPath)
-        .noVideo()
-        .audioChannels(1)
-        .audioFrequency(16000)
-        .format("wav")
-        .output(audioPath),
-    );
+          send({ type: "progress", progress: 12, stage: "Preparing downloader" });
+          const ytDlp = await getYtDlp();
+          send({ type: "progress", progress: 18, stage: "Downloading video" });
+          await ytDlp.execPromise([
+            youtubeUrl.trim(),
+            "--no-playlist",
+            "--ffmpeg-location",
+            getFfmpegDirectory(),
+            "-f",
+            "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best",
+            "--merge-output-format",
+            "mp4",
+            "-o",
+            videoOutputTemplate,
+          ]);
 
-    await runFfmpeg(
-      ffmpeg(videoPath)
-        .outputOptions(["-vf", `fps=${ONE_FRAME_PER_SECOND}`, "-q:v", "2"])
-        .output(path.join(framesDir, "frame_%05d.jpg")),
-    );
+          const videoPath = await findDownloadedVideo(jobDir);
 
-    const framePaths = await listFiles(framesDir);
-    const rawVideoStoragePath = `${storagePrefix}/raw/original${path.extname(videoPath) || ".mp4"}`;
-    const audioStoragePath = `${storagePrefix}/audio/audio.wav`;
+          send({ type: "progress", progress: 35, stage: "Extracting audio" });
+          await runFfmpeg(
+            ffmpeg(videoPath)
+              .noVideo()
+              .audioChannels(1)
+              .audioFrequency(16000)
+              .format("wav")
+              .output(audioPath),
+          );
 
-    await uploadToSupabaseStorage({
-      bucket: STORAGE_BUCKETS.rawVideos,
-      storagePath: rawVideoStoragePath,
-      localPath: videoPath,
-      contentType: "video/mp4",
-    });
+          send({
+            type: "progress",
+            progress: 43,
+            stage: "Preparing audio for transcription",
+          });
+          await createAudioWithLeadIn(audioPath, transcriptionAudioPath);
 
-    await uploadToSupabaseStorage({
-      bucket: STORAGE_BUCKETS.audio,
-      storagePath: audioStoragePath,
-      localPath: audioPath,
-      contentType: "audio/wav",
-    });
+          send({ type: "progress", progress: 50, stage: "Extracting frames" });
+          await runFfmpeg(
+            ffmpeg(videoPath)
+              .outputOptions(["-vf", `fps=${ONE_FRAME_PER_SECOND}`, "-q:v", "2"])
+              .output(path.join(framesDir, "frame_%05d.jpg")),
+          );
 
-    await removeJobDirectory(jobDir);
-    jobDir = null;
+          const framePaths = await listFiles(framesDir);
+          const rawVideoStoragePath = `${storagePrefix}/raw/original${path.extname(videoPath) || ".mp4"}`;
+          const audioStoragePath = `${storagePrefix}/audio/audio.wav`;
+          const transcriptStoragePath = `${storagePrefix}/transcripts/transcript-und.json`;
 
-    return NextResponse.json({
-      success: true,
-      rawVideoPath: rawVideoStoragePath,
-      audioPath: audioStoragePath,
-      buckets: STORAGE_BUCKETS,
-      frameCount: framePaths.length,
-      frameRate: ONE_FRAME_PER_SECOND,
-      message:
-        "YouTube video processed. Raw video and audio were uploaded; local frames were deleted after processing.",
-    });
-  } catch (error) {
-    console.error("Error processing YouTube video:", error);
-    return NextResponse.json(
-      {
-        success: false,
-        message: error?.message || "Failed to process YouTube video.",
+          send({ type: "progress", progress: 62, stage: "Transcribing audio" });
+          const transcript = await transcribeAudioWithOpenAI(
+            transcriptionAudioPath,
+          );
+          transcript.source = {
+            youtubeUrl: youtubeUrl.trim(),
+            audioPath: audioStoragePath,
+            transcriptionLeadInSeconds: TRANSCRIPTION_LEAD_IN_SECONDS,
+          };
+          await fs.promises.writeFile(
+            transcriptPath,
+            JSON.stringify(transcript, null, 2),
+            "utf-8",
+          );
+
+          send({ type: "progress", progress: 78, stage: "Uploading raw video" });
+          await uploadToSupabaseStorage({
+            bucket: STORAGE_BUCKETS.rawVideos,
+            storagePath: rawVideoStoragePath,
+            localPath: videoPath,
+            contentType: "video/mp4",
+          });
+
+          send({ type: "progress", progress: 86, stage: "Uploading audio" });
+          await uploadToSupabaseStorage({
+            bucket: STORAGE_BUCKETS.audio,
+            storagePath: audioStoragePath,
+            localPath: audioPath,
+            contentType: "audio/wav",
+          });
+
+          send({ type: "progress", progress: 92, stage: "Uploading transcript" });
+          await uploadToSupabaseStorage({
+            bucket: STORAGE_BUCKETS.transcripts,
+            storagePath: transcriptStoragePath,
+            localPath: transcriptPath,
+            contentType: "application/json",
+          });
+
+          send({ type: "progress", progress: 97, stage: "Cleaning temporary files" });
+          await removeJobDirectory(jobDir);
+          jobDir = null;
+
+          send({
+            type: "complete",
+            progress: 100,
+            stage: "Complete",
+            result: {
+              success: true,
+              rawVideoPath: rawVideoStoragePath,
+              audioPath: audioStoragePath,
+              transcriptPath: transcriptStoragePath,
+              transcriptText: transcript.text || "",
+              buckets: STORAGE_BUCKETS,
+              frameCount: framePaths.length,
+              frameRate: ONE_FRAME_PER_SECOND,
+              message:
+                "YouTube video processed. Raw video, audio, and transcript were uploaded; local frames were deleted after processing.",
+            },
+          });
+        } catch (error) {
+          console.error("Error processing YouTube video:", error);
+          send({
+            type: "error",
+            message: error?.message || "Failed to process YouTube video.",
+          });
+        } finally {
+          if (jobDir) {
+            await removeJobDirectory(jobDir);
+          }
+          controller.close();
+        }
       },
-      { status: 500 },
-    );
-  } finally {
-    if (jobDir) {
-      await removeJobDirectory(jobDir);
-    }
-  }
+    }),
+    {
+      headers: {
+        "Cache-Control": "no-cache, no-transform",
+        "Content-Type": "application/x-ndjson; charset=utf-8",
+      },
+    },
+  );
 }

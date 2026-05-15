@@ -12,10 +12,17 @@ type ProcessingResult = {
   success: boolean;
   rawVideoPath?: string;
   audioPath?: string;
+  transcriptPath?: string;
+  transcriptText?: string;
   frameCount?: number;
   frameRate?: number;
   message?: string;
 }
+
+type ProgressEvent =
+  | { type: "progress"; progress: number; stage: string }
+  | { type: "complete"; progress: number; stage: string; result: ProcessingResult }
+  | { type: "error"; message: string };
 
 function getPreviewSource(input: string): PreviewSource {
   const trimmedInput = input.trim();
@@ -76,11 +83,15 @@ export default function Home() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [results, setResults] = useState<ProcessingResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [progressStage, setProgressStage] = useState("");
 
   async function handleProcessClick() {
     setIsProcessing(true);
     setError(null);
     setResults(null);
+    setProgress(0);
+    setProgressStage("Starting");
 
     try {
       const response = await fetch('/api/process-youtube', {
@@ -89,15 +100,55 @@ export default function Home() {
         body: JSON.stringify({ youtubeUrl: videoUrl }),
       });
 
-      const data = await response.json();
-
       if (!response.ok) {
+        const data = await response.json().catch(() => null);
         throw new Error(data.message || 'Something went wrong during processing.');
       }
 
-      setResults(data);
+      if (!response.body) {
+        throw new Error('The processing stream did not start.');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) {
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.trim()) {
+            continue;
+          }
+
+          const event = JSON.parse(line) as ProgressEvent;
+
+          if (event.type === "progress") {
+            setProgress(event.progress);
+            setProgressStage(event.stage);
+          }
+
+          if (event.type === "complete") {
+            setProgress(event.progress);
+            setProgressStage(event.stage);
+            setResults(event.result);
+          }
+
+          if (event.type === "error") {
+            throw new Error(event.message);
+          }
+        }
+      }
     } catch (err: any) {
       setError(err.message);
+      setProgressStage("Failed");
     } finally {
       setIsProcessing(false);
     }
@@ -160,8 +211,14 @@ export default function Home() {
 
       <section className="resultsCard" aria-live="polite">
         {isProcessing && (
-          <div className="emptyState">
-            <span>Processing video... please wait.</span>
+          <div className="progressPanel">
+            <div className="progressHeader">
+              <span>{progressStage || "Processing video"}</span>
+              <span>{progress}%</span>
+            </div>
+            <div className="progressTrack" aria-label="Processing progress">
+              <div className="progressFill" style={{ width: `${progress}%` }} />
+            </div>
           </div>
         )}
         {error && (
@@ -174,8 +231,12 @@ export default function Home() {
             <h3>Uploaded to Storage</h3>
             <p><strong>Raw Video Path:</strong> {results.rawVideoPath}</p>
             <p><strong>Audio Path:</strong> {results.audioPath}</p>
+            <p><strong>Transcript Path:</strong> {results.transcriptPath}</p>
             <p><strong>Frames Analyzed Locally:</strong> {results.frameCount ?? 0}</p>
             <p><strong>Frame Sampling:</strong> {results.frameRate ?? 1} frame per second</p>
+            {results.transcriptText && (
+              <p><strong>Transcript Preview:</strong> {results.transcriptText.slice(0, 280)}</p>
+            )}
           </div>
         )}
       </section>

@@ -68,6 +68,9 @@ pip install -r storage/requirements-assets.txt
 The current Next.js YouTube route uploads assets to Supabase Storage directly
 from Node, so the database smoke test only needs `storage/requirements.txt`.
 
+The current Next.js YouTube route uploads assets to Supabase Storage directly
+from Node and uses OpenAI's hosted transcription API for the extracted WAV file.
+
 Then open Supabase Dashboard > SQL Editor, paste `storage/schema.sql`, and run
 it once.
 
