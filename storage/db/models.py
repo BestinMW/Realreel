@@ -40,7 +40,11 @@ class Video(Base):
     )
     original_url: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     platform: Mapped[Platform] = mapped_column(
-        SqlEnum(Platform, name="video_platform"),
+        SqlEnum(
+            Platform,
+            name="video_platform",
+            values_callable=lambda enum_class: [member.value for member in enum_class],
+        ),
         nullable=False,
         default=Platform.UNKNOWN,
     )

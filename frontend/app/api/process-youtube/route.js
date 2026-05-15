@@ -9,6 +9,10 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const ONE_FRAME_PER_SECOND = 1;
+const STORAGE_BUCKETS = {
+  rawVideos: process.env.RAW_VIDEOS_BUCKET || "raw-videos",
+  audio: process.env.AUDIO_BUCKET || "audio",
+};
 
 function getFfmpegPath() {
   const binaryName = os.platform() === "win32" ? "ffmpeg.exe" : "ffmpeg";
@@ -94,9 +98,64 @@ async function getYtDlp() {
   return new YTDlpWrap(binaryPath);
 }
 
-async function countFiles(directory) {
+async function listFiles(directory) {
   const entries = await fs.promises.readdir(directory);
-  return entries.length;
+  return entries
+    .filter((entry) => !entry.startsWith("."))
+    .sort((a, b) => a.localeCompare(b))
+    .map((entry) => path.join(directory, entry));
+}
+
+function getSupabaseConfig() {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error(
+      "Supabase storage is not configured. Add SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to frontend/.env.local.",
+    );
+  }
+
+  return {
+    supabaseUrl: supabaseUrl.replace(/\/$/, ""),
+    serviceRoleKey,
+  };
+}
+
+async function uploadToSupabaseStorage({
+  bucket,
+  storagePath,
+  localPath,
+  contentType,
+}) {
+  const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
+  const stats = await fs.promises.stat(localPath);
+  const uploadUrl = `${supabaseUrl}/storage/v1/object/${bucket}/${storagePath
+    .split("/")
+    .map(encodeURIComponent)
+    .join("/")}`;
+
+  const response = await fetch(uploadUrl, {
+    method: "POST",
+    headers: {
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+      "Content-Type": contentType,
+      "Content-Length": String(stats.size),
+      "x-upsert": "true",
+    },
+    body: fs.createReadStream(localPath),
+    duplex: "half",
+  });
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(
+      `Failed to upload ${storagePath} to Supabase Storage: ${details}`,
+    );
+  }
+
+  return storagePath;
 }
 
 async function findDownloadedVideo(jobDir) {
@@ -122,7 +181,13 @@ async function findDownloadedVideo(jobDir) {
   return videos[0];
 }
 
+async function removeJobDirectory(jobDir) {
+  await fs.promises.rm(jobDir, { recursive: true, force: true });
+}
+
 export async function POST(request) {
+  let jobDir;
+
   try {
     const { youtubeUrl } = await request.json();
     const videoId = parseYouTubeUrl(youtubeUrl);
@@ -135,7 +200,8 @@ export async function POST(request) {
     }
 
     const jobId = `${safeSegment(videoId)}-${Date.now()}`;
-    const jobDir = path.join(process.cwd(), "..", "tmp", "uploads", jobId);
+    const storagePrefix = `videos/${jobId}`;
+    jobDir = path.join(process.cwd(), "..", "tmp", "uploads", jobId);
     const videoOutputTemplate = path.join(jobDir, "source.%(ext)s");
     const audioPath = path.join(jobDir, "audio.wav");
     const framesDir = path.join(jobDir, "frames");
@@ -173,17 +239,36 @@ export async function POST(request) {
         .output(path.join(framesDir, "frame_%05d.jpg")),
     );
 
-    fs.unlinkSync(videoPath);
+    const framePaths = await listFiles(framesDir);
+    const rawVideoStoragePath = `${storagePrefix}/raw/original${path.extname(videoPath) || ".mp4"}`;
+    const audioStoragePath = `${storagePrefix}/audio/audio.wav`;
 
-    const frameCount = await countFiles(framesDir);
+    await uploadToSupabaseStorage({
+      bucket: STORAGE_BUCKETS.rawVideos,
+      storagePath: rawVideoStoragePath,
+      localPath: videoPath,
+      contentType: "video/mp4",
+    });
+
+    await uploadToSupabaseStorage({
+      bucket: STORAGE_BUCKETS.audio,
+      storagePath: audioStoragePath,
+      localPath: audioPath,
+      contentType: "audio/wav",
+    });
+
+    await removeJobDirectory(jobDir);
+    jobDir = null;
 
     return NextResponse.json({
       success: true,
-      audioPath,
-      framesPath: framesDir,
-      frameCount,
+      rawVideoPath: rawVideoStoragePath,
+      audioPath: audioStoragePath,
+      buckets: STORAGE_BUCKETS,
+      frameCount: framePaths.length,
       frameRate: ONE_FRAME_PER_SECOND,
-      message: "YouTube video processed successfully.",
+      message:
+        "YouTube video processed. Raw video and audio were uploaded; local frames were deleted after processing.",
     });
   } catch (error) {
     console.error("Error processing YouTube video:", error);
@@ -194,5 +279,9 @@ export async function POST(request) {
       },
       { status: 500 },
     );
+  } finally {
+    if (jobDir) {
+      await removeJobDirectory(jobDir);
+    }
   }
 }

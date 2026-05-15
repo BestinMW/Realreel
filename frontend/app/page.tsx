@@ -10,8 +10,8 @@ type PreviewSource =
 
 type ProcessingResult = {
   success: boolean;
+  rawVideoPath?: string;
   audioPath?: string;
-  framesPath?: string;
   frameCount?: number;
   frameRate?: number;
   message?: string;
@@ -171,10 +171,10 @@ export default function Home() {
         )}
         {results && results.success && (
           <div>
-            <h3>Processing Successful!</h3>
+            <h3>Uploaded to Storage</h3>
+            <p><strong>Raw Video Path:</strong> {results.rawVideoPath}</p>
             <p><strong>Audio Path:</strong> {results.audioPath}</p>
-            <p><strong>Frames Path:</strong> {results.framesPath}</p>
-            <p><strong>Frames Extracted:</strong> {results.frameCount ?? 0}</p>
+            <p><strong>Frames Analyzed Locally:</strong> {results.frameCount ?? 0}</p>
             <p><strong>Frame Sampling:</strong> {results.frameRate ?? 1} frame per second</p>
           </div>
         )}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import socket
 import sys
 import time
 from decimal import Decimal
@@ -26,6 +27,7 @@ except Exception as exc:
     print("Could not load storage settings.")
     print("Make sure your environment variables are set from storage/env.example.")
     print("Also make sure you already ran storage/schema.sql in Supabase.")
+    print(f"Details: {type(exc).__name__}: {exc}")
     raise SystemExit(1) from exc
 
 
@@ -91,4 +93,13 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except socket.gaierror as exc:
+        print("Could not resolve the database host in DATABASE_URL.")
+        print("Check that DATABASE_URL does not still contain a placeholder like db.your-project.supabase.co.")
+        print("Copy the connection string from Supabase's Connect button, then replace [YOUR-PASSWORD].")
+        raise SystemExit(1) from exc
+    except Exception as exc:
+        print(f"Storage/database smoke test failed: {type(exc).__name__}: {exc}")
+        raise

@@ -59,6 +59,15 @@ Install Python dependencies:
 pip install -r storage/requirements.txt
 ```
 
+The optional Python Supabase asset helper needs the Supabase client package:
+
+```bash
+pip install -r storage/requirements-assets.txt
+```
+
+The current Next.js YouTube route uploads assets to Supabase Storage directly
+from Node, so the database smoke test only needs `storage/requirements.txt`.
+
 Then open Supabase Dashboard > SQL Editor, paste `storage/schema.sql`, and run
 it once.
 
@@ -100,6 +109,7 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 EMBEDDING_DIMENSION=512
 SIGNED_URL_TTL_SECONDS=900
 RAW_VIDEOS_BUCKET=raw-videos
+AUDIO_BUCKET=audio
 TRANSCRIPTS_BUCKET=transcripts
 THUMBNAILS_BUCKET=thumbnails
 ```
@@ -109,9 +119,10 @@ frontend.
 
 ## Storage Buckets
 
-The simplified setup uses three private buckets:
+The simplified setup uses private buckets:
 
 - `raw-videos`: downloaded source video files
+- `audio`: extracted WAV audio files
 - `transcripts`: JSON/text transcript artifacts
 - `thumbnails`: preview images
 

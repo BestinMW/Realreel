@@ -40,7 +40,10 @@ async def find_similar_videos(
             1 - (v.video_embedding <=> cast(:embedding as vector)) as similarity
         from videos v
         where v.video_embedding is not null
-          and (:exclude_video_id is null or v.id != :exclude_video_id)
+          and (
+            cast(:exclude_video_id as uuid) is null
+            or v.id != cast(:exclude_video_id as uuid)
+          )
           and (v.video_embedding <=> cast(:embedding as vector)) <= :max_distance
         order by v.video_embedding <=> cast(:embedding as vector)
         limit :limit
@@ -51,7 +54,7 @@ async def find_similar_videos(
             "embedding": _vector_literal(embedding),
             "limit": limit,
             "max_distance": max_cosine_distance,
-            "exclude_video_id": exclude_video_id,
+            "exclude_video_id": str(exclude_video_id) if exclude_video_id else None,
         },
     )
     return [dict(row._mapping) for row in result]

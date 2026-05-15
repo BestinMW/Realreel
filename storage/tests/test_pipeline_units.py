@@ -10,6 +10,7 @@ os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "fake-service-role-key")
 os.environ.setdefault("EMBEDDING_DIMENSION", "512")
 
 from storage.assets.paths import (  # noqa: E402
+    audio_path,
     raw_video_path,
     thumbnail_path,
     transcript_path,
@@ -50,6 +51,10 @@ class StoragePipelineUnitTests(unittest.TestCase):
         self.assertEqual(
             raw_video_path(video_id, "clip.mp4"),
             "videos/00000000-0000-0000-0000-000000000001/raw/original.mp4",
+        )
+        self.assertEqual(
+            audio_path(video_id),
+            "videos/00000000-0000-0000-0000-000000000001/audio/audio.wav",
         )
         self.assertEqual(
             thumbnail_path(video_id),

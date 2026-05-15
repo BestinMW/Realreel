@@ -6,7 +6,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from storage.assets.paths import all_asset_prefixes
-from storage.assets.supabase import SupabaseStorageService, storage_service
 from storage.db.models import Video
 from storage.schemas import VideoCreate
 
@@ -59,8 +58,13 @@ async def delete_video_and_assets(
     session: AsyncSession,
     *,
     video_id: uuid.UUID,
-    storage: SupabaseStorageService = storage_service,
+    storage=None,
 ) -> None:
+    if storage is None:
+        from storage.assets.supabase import storage_service
+
+        storage = storage_service
+
     video = await get_video_or_raise(session, video_id)
     await storage.delete_prefixes(all_asset_prefixes(video_id))
     await session.delete(video)

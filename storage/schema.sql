@@ -87,6 +87,7 @@ execute function public.set_updated_at();
 insert into storage.buckets (id, name, public)
 values
   ('raw-videos', 'raw-videos', false),
+  ('audio', 'audio', false),
   ('transcripts', 'transcripts', false),
   ('thumbnails', 'thumbnails', false)
 on conflict (id) do update set public = excluded.public;

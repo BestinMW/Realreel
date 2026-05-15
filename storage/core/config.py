@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     signed_url_ttl_seconds: int = Field(900, alias="SIGNED_URL_TTL_SECONDS")
 
     raw_videos_bucket: str = Field("raw-videos", alias="RAW_VIDEOS_BUCKET")
+    audio_bucket: str = Field("audio", alias="AUDIO_BUCKET")
     transcripts_bucket: str = Field("transcripts", alias="TRANSCRIPTS_BUCKET")
     thumbnails_bucket: str = Field("thumbnails", alias="THUMBNAILS_BUCKET")
 
