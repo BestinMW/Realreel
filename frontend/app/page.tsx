@@ -21,6 +21,8 @@ type ProcessingResult = {
   analyzedKeyFrameCount?: number;
   maxKeyframesToAnalyze?: number;
   ocrTextFrameCount?: number;
+  visionSignalFrameCount?: number;
+  crossModalHintCount?: number;
   keyframeSceneThreshold?: number;
   message?: string;
 }
@@ -244,6 +246,8 @@ export default function Home() {
             <p><strong>Keyframes Extracted Locally:</strong> {results.keyFrameCount ?? 0}</p>
             <p><strong>Keyframes Analyzed:</strong> {results.analyzedKeyFrameCount ?? 0} of max {results.maxKeyframesToAnalyze ?? 6}</p>
             <p><strong>Keyframes With OCR Text:</strong> {results.ocrTextFrameCount ?? 0}</p>
+            <p><strong>Keyframes With Vision Signals:</strong> {results.visionSignalFrameCount ?? 0}</p>
+            <p><strong>Cross-Modal Hints:</strong> {results.crossModalHintCount ?? 0}</p>
             <p><strong>Scene Threshold:</strong> {results.keyframeSceneThreshold ?? 0.35}</p>
             {results.transcriptText && (
               <p><strong>Transcript Preview:</strong> {results.transcriptText.slice(0, 280)}</p>

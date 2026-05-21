@@ -1,5 +1,11 @@
 import fs from "fs";
 
+import {
+  DEFAULT_VISION_INDICATORS,
+  normalizeVisionIndicators,
+  VISION_PROMPT,
+} from "./indicators";
+
 const GEMINI_MODEL = process.env.GEMINI_VISION_MODEL || "gemini-2.5-flash-lite";
 const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_VISION_TIMEOUT_MS || 8000);
 const VISION_ENABLED = process.env.ENABLE_KEYFRAME_VISION !== "false";
@@ -11,13 +17,10 @@ function getGeminiApiKey() {
 function emptyVisionResult(error = null) {
   return {
     ok: !error,
-    sceneDescription: "",
-    objects: [],
-    people: [],
-    setting: "",
-    actions: [],
-    notes: error || "No notable visual details returned.",
-    confidence: null,
+    indicators: {
+      ...DEFAULT_VISION_INDICATORS,
+      synthetic: { ...DEFAULT_VISION_INDICATORS.synthetic },
+    },
     error,
   };
 }
@@ -31,7 +34,18 @@ function parseJsonResponse(text) {
   }
 }
 
-export async function analyzeFrameWithGemini(framePath) {
+function buildVisionPrompt(ocrSummary) {
+  if (!ocrSummary) {
+    return VISION_PROMPT;
+  }
+
+  return (
+    `${VISION_PROMPT}\n\n` +
+    `OCR preprocessing summary (do not re-transcribe): ${ocrSummary}`
+  );
+}
+
+export async function analyzeFrameWithGemini(framePath, { ocrSummary } = {}) {
   if (!VISION_ENABLED) {
     return emptyVisionResult(
       "Gemini vision disabled by ENABLE_KEYFRAME_VISION=false.",
@@ -68,10 +82,7 @@ export async function analyzeFrameWithGemini(framePath) {
                   },
                 },
                 {
-                  text:
-                    "Analyze this video keyframe for a media forensics pipeline. " +
-                    "Return only JSON with keys: sceneDescription, objects, people, setting, actions, notes, confidence. " +
-                    "Keep sceneDescription short. Include uncertainty in notes. Do not do OCR; OCR is handled separately.",
+                  text: buildVisionPrompt(ocrSummary),
                 },
               ],
             },
@@ -98,13 +109,7 @@ export async function analyzeFrameWithGemini(framePath) {
 
     return {
       ok: true,
-      sceneDescription: parsed.sceneDescription || "",
-      objects: Array.isArray(parsed.objects) ? parsed.objects : [],
-      people: Array.isArray(parsed.people) ? parsed.people : [],
-      setting: parsed.setting || "",
-      actions: Array.isArray(parsed.actions) ? parsed.actions : [],
-      notes: parsed.notes || "",
-      confidence: parsed.confidence ?? null,
+      indicators: normalizeVisionIndicators(parsed),
       error: null,
     };
   } catch (error) {

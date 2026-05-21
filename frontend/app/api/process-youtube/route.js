@@ -472,8 +472,17 @@ export async function POST(request) {
               analyzedKeyFrameCount: keyframesForAnalysis.length,
               maxKeyframesToAnalyze: MAX_KEYFRAMES_TO_ANALYZE,
               ocrTextFrameCount: keyframeAnalysis.frames.filter(
-                (frame) => frame.ocrText.length > 0,
+                (frame) => frame.ocr?.indicators?.hasText,
               ).length,
+              visionSignalFrameCount: keyframeAnalysis.frames.filter(
+                (frame) =>
+                  (frame.vision?.indicators?.contextSignals?.length ?? 0) > 0 ||
+                  (frame.vision?.indicators?.synthetic?.signals?.length ?? 0) > 0,
+              ).length,
+              crossModalHintCount: keyframeAnalysis.frames.reduce(
+                (count, frame) => count + (frame.hints?.length ?? 0),
+                0,
+              ),
               keyframeSceneThreshold: KEYFRAME_SCENE_THRESHOLD,
               message:
                 "YouTube video processed. Raw video, audio, transcript, and keyframe analysis were uploaded; local frames and keyframes were deleted after processing.",

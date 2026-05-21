@@ -57,6 +57,13 @@ Both folders are deleted after processing. The uploaded JSON artifact is:
 videos/{jobId}/analysis/keyframe-analysis.json
 ```
 
+`keyframe-analysis.json` is preprocessing only (`schemaVersion: "1"`). Each frame has:
+
+- `ocr.text` — raw on-screen text and line bounding boxes
+- `ocr.indicators` — local heuristics (`hasText`, `likelyHeadline`, `hasUrl`, etc.)
+- `vision.indicators` — Gemini booleans/enums (`hasChartOrGraph`, `synthetic`, `contextSignals`, etc.)
+- `hints` — cheap OCR/vision cross-checks for a later analysis step
+
 Cost notes:
 
 - OpenAI transcription is billed by audio duration.

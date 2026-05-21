@@ -1,6 +1,8 @@
 import { createWorker, PSM } from "tesseract.js";
 import path from "path";
 
+import { deriveOcrIndicators, estimateImageSizeFromLines } from "./indicators";
+
 const OCR_LANGUAGE = process.env.TESSERACT_LANGUAGE || "eng";
 const MIN_WORD_CONFIDENCE = Number(process.env.TESSERACT_MIN_CONFIDENCE || 35);
 const OCR_ENABLED = process.env.ENABLE_KEYFRAME_OCR !== "false";
@@ -27,29 +29,43 @@ function normalizeBox(box) {
   };
 }
 
-function collectWords(blocks) {
-  const words = [];
+function collectLines(blocks) {
+  const lines = [];
 
   for (const block of blocks || []) {
     for (const paragraph of block.paragraphs || []) {
       for (const line of paragraph.lines || []) {
-        for (const word of line.words || []) {
-          const text = word.text?.trim();
-          if (!text || word.confidence < MIN_WORD_CONFIDENCE) {
-            continue;
-          }
-
-          words.push({
-            text,
-            confidence: word.confidence,
-            boundingBox: normalizeBox(word.bbox),
-          });
+        const text = line.text?.trim();
+        if (!text || line.confidence < MIN_WORD_CONFIDENCE) {
+          continue;
         }
+
+        lines.push({
+          text,
+          confidence: line.confidence,
+          boundingBox: normalizeBox(line.bbox),
+        });
       }
     }
   }
 
-  return words;
+  return lines;
+}
+
+function emptyOcrResult(error = null) {
+  const lines = [];
+
+  return {
+    ok: !error,
+    text: {
+      raw: "",
+      lines,
+      wordCount: 0,
+    },
+    indicators: deriveOcrIndicators({ lines, raw: "" }),
+    confidence: null,
+    error,
+  };
 }
 
 export async function createOcrProvider() {
@@ -73,23 +89,32 @@ export async function createOcrProvider() {
           OCR_RECOGNITION_TIMEOUT_MS,
           `Tesseract OCR timed out after ${OCR_RECOGNITION_TIMEOUT_MS} ms.`,
         );
-        const words = collectWords(result.data.blocks);
+        const rawText = result.data.text?.trim() || "";
+        const lines = collectLines(result.data.blocks);
+        const { width, height } = estimateImageSizeFromLines(lines);
+        const indicators = deriveOcrIndicators({
+          lines,
+          raw: rawText,
+          width,
+          height,
+        });
 
         return {
           ok: true,
-          rawText: result.data.text?.trim() || "",
+          text: {
+            raw: rawText,
+            lines,
+            wordCount: lines.reduce(
+              (count, line) => count + line.text.split(/\s+/).filter(Boolean).length,
+              0,
+            ),
+          },
+          indicators,
           confidence: result.data.confidence ?? null,
-          words,
           error: null,
         };
       } catch (error) {
-        return {
-          ok: false,
-          rawText: "",
-          confidence: null,
-          words: [],
-          error: error?.message || "OCR failed.",
-        };
+        return emptyOcrResult(error?.message || "OCR failed.");
       }
     },
 
@@ -102,13 +127,7 @@ export async function createOcrProvider() {
 function disabledProvider(message) {
   return {
     async analyzeFrame() {
-      return {
-        ok: false,
-        rawText: "",
-        confidence: null,
-        words: [],
-        error: message,
-      };
+      return emptyOcrResult(message);
     },
 
     async close() {},

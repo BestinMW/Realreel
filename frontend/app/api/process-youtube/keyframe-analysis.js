@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 
+import { crossModalHints, SCHEMA_VERSION } from "./indicators";
 import { createOcrProvider } from "./ocr";
 import { analyzeFrameWithGemini } from "./vision";
 
@@ -33,29 +34,34 @@ export async function analyzeKeyframes({
         frame,
       });
 
-      const [ocr, vision] = await Promise.all([
-        ocrProvider.analyzeFrame(framePath),
-        analyzeFrameWithGemini(framePath),
-      ]);
+      const ocr = await ocrProvider.analyzeFrame(framePath);
+      const ocrSummary = formatOcrSummary(ocr);
+      const vision = await analyzeFrameWithGemini(framePath, { ocrSummary });
 
-      frames.push({
+      const frameRecord = {
         frame,
         timestamp:
           timestampSeconds === null ? null : secondsToTimestamp(timestampSeconds),
         timestampSeconds,
-        ocrText: ocr.words,
-        rawDetectedText: ocr.rawText,
-        ocrConfidence: ocr.confidence,
-        ocrError: ocr.error,
-        sceneDescription: vision.sceneDescription,
-        objects: vision.objects,
-        people: vision.people,
-        setting: vision.setting,
-        actions: vision.actions,
-        notes: vision.notes,
-        visionConfidence: vision.confidence,
-        visionError: vision.error,
-      });
+        ocr: {
+          ok: ocr.ok,
+          text: ocr.text,
+          indicators: ocr.indicators,
+          confidence: ocr.confidence,
+          error: ocr.error,
+        },
+        vision: {
+          ok: vision.ok,
+          indicators: vision.indicators,
+          error: vision.error,
+        },
+        hints: crossModalHints(
+          { indicators: ocr.indicators },
+          { indicators: vision.indicators },
+        ),
+      };
+
+      frames.push(frameRecord);
     }
   } finally {
     await withTimeout(
@@ -66,6 +72,7 @@ export async function analyzeKeyframes({
   }
 
   const result = {
+    schemaVersion: SCHEMA_VERSION,
     generatedAt: new Date().toISOString(),
     providerVersions: {
       ocr: "tesseract.js",
@@ -93,9 +100,19 @@ async function getOcrProvider() {
       async analyzeFrame() {
         return {
           ok: false,
-          rawText: "",
+          text: { raw: "", lines: [], wordCount: 0 },
+          indicators: {
+            hasText: false,
+            lineCount: 0,
+            textAreaRatio: 0,
+            likelyHeadline: false,
+            hasNumbers: false,
+            hasUrl: false,
+            hasDateLike: false,
+            hasAllCapsWords: false,
+            avgLineConfidence: null,
+          },
           confidence: null,
-          words: [],
           error: message,
         };
       },
@@ -103,6 +120,18 @@ async function getOcrProvider() {
       async close() {},
     };
   }
+}
+
+function formatOcrSummary(ocr) {
+  if (!ocr?.indicators) {
+    return "hasText=false";
+  }
+
+  return [
+    `hasText=${ocr.indicators.hasText}`,
+    `lineCount=${ocr.indicators.lineCount}`,
+    `likelyHeadline=${ocr.indicators.likelyHeadline}`,
+  ].join(", ");
 }
 
 function withTimeout(promise, timeoutMs, message) {

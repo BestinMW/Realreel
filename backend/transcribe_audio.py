@@ -41,7 +41,7 @@ def main():
         from faster_whisper import WhisperModel
     except ImportError:
         print(
-            "Missing dependency: faster-whisper. Install it with `pip install faster-whisper`.",
+            "Missing dependency: faster-whisper. Install backend requirements with `pip install -r requirements.txt`.",
             file=sys.stderr,
         )
         return 1
