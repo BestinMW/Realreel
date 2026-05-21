@@ -3,15 +3,21 @@ import fs from "fs";
 import os from "os";
 import YTDlpWrap from "yt-dlp-wrap";
 import ffmpeg from "fluent-ffmpeg";
+import { analyzeKeyframes } from "./keyframe-analysis";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const ONE_FRAME_PER_SECOND = 1;
+const FRAME_SAMPLE_RATE = Number(process.env.FRAME_SAMPLE_RATE || 1);
+const KEYFRAME_SCENE_THRESHOLD = Number(
+  process.env.KEYFRAME_SCENE_THRESHOLD || 0.35,
+);
+const MAX_KEYFRAMES_TO_ANALYZE = Number(process.env.MAX_KEYFRAMES_TO_ANALYZE || 3);
 const STORAGE_BUCKETS = {
   rawVideos: process.env.RAW_VIDEOS_BUCKET || "raw-videos",
   audio: process.env.AUDIO_BUCKET || "audio",
   transcripts: process.env.TRANSCRIPTS_BUCKET || "transcripts",
+  analysis: process.env.ANALYSIS_BUCKET || process.env.TRANSCRIPTS_BUCKET || "transcripts",
 };
 const OPENAI_TRANSCRIPTION_MODEL =
   process.env.OPENAI_TRANSCRIPTION_MODEL || "whisper-1";
@@ -88,6 +94,17 @@ function runFfmpeg(command) {
   });
 }
 
+function runFfmpegWithStderr(command) {
+  return new Promise((resolve, reject) => {
+    const stderrLines = [];
+    command
+      .on("stderr", (line) => stderrLines.push(line))
+      .on("error", reject)
+      .on("end", () => resolve(stderrLines.join("\n")))
+      .run();
+  });
+}
+
 async function createAudioWithLeadIn(sourcePath, outputPath) {
   await runFfmpeg(
     ffmpeg()
@@ -100,6 +117,33 @@ async function createAudioWithLeadIn(sourcePath, outputPath) {
       .audioFrequency(16000)
       .format("wav")
       .output(outputPath),
+  );
+}
+
+async function extractKeyframes(videoPath, keyframesDir) {
+  const stderr = await runFfmpegWithStderr(
+    ffmpeg(videoPath)
+      .outputOptions([
+        "-vf",
+        `select=eq(n\\,0)+gt(scene\\,${KEYFRAME_SCENE_THRESHOLD}),showinfo`,
+        "-vsync",
+        "vfr",
+        "-q:v",
+        "2",
+      ])
+      .output(path.join(keyframesDir, "keyframe_%05d.jpg")),
+  );
+
+  return [...stderr.matchAll(/pts_time:([0-9.]+)/g)].map((match) =>
+    Number(match[1]),
+  );
+}
+
+async function extractSampledFrames(videoPath, framesDir) {
+  await runFfmpeg(
+    ffmpeg(videoPath)
+      .outputOptions(["-vf", `fps=${FRAME_SAMPLE_RATE}`, "-q:v", "2"])
+      .output(path.join(framesDir, "frame_%05d.jpg")),
   );
 }
 
@@ -283,10 +327,13 @@ export async function POST(request) {
             "audio-for-transcript.wav",
           );
           const transcriptPath = path.join(jobDir, "transcript.json");
+          const keyframeAnalysisPath = path.join(jobDir, "keyframe-analysis.json");
           const framesDir = path.join(jobDir, "frames");
+          const keyframesDir = path.join(jobDir, "keyframes");
 
           send({ type: "progress", progress: 8, stage: "Preparing workspace" });
           fs.mkdirSync(framesDir, { recursive: true });
+          fs.mkdirSync(keyframesDir, { recursive: true });
 
           send({ type: "progress", progress: 12, stage: "Preparing downloader" });
           const ytDlp = await getYtDlp();
@@ -323,17 +370,23 @@ export async function POST(request) {
           });
           await createAudioWithLeadIn(audioPath, transcriptionAudioPath);
 
-          send({ type: "progress", progress: 50, stage: "Extracting frames" });
-          await runFfmpeg(
-            ffmpeg(videoPath)
-              .outputOptions(["-vf", `fps=${ONE_FRAME_PER_SECOND}`, "-q:v", "2"])
-              .output(path.join(framesDir, "frame_%05d.jpg")),
-          );
+          send({ type: "progress", progress: 50, stage: "Extracting sampled frames" });
+          await extractSampledFrames(videoPath, framesDir);
+
+          send({ type: "progress", progress: 56, stage: "Extracting keyframes" });
+          const keyframeTimestamps = await extractKeyframes(videoPath, keyframesDir);
 
           const framePaths = await listFiles(framesDir);
+          const keyframePaths = await listFiles(keyframesDir);
           const rawVideoStoragePath = `${storagePrefix}/raw/original${path.extname(videoPath) || ".mp4"}`;
           const audioStoragePath = `${storagePrefix}/audio/audio.wav`;
           const transcriptStoragePath = `${storagePrefix}/transcripts/transcript-und.json`;
+          const keyframeAnalysisStoragePath = `${storagePrefix}/analysis/keyframe-analysis.json`;
+          const keyframesForAnalysis = keyframePaths.slice(0, MAX_KEYFRAMES_TO_ANALYZE);
+          const timestampsForAnalysis = keyframeTimestamps.slice(
+            0,
+            keyframesForAnalysis.length,
+          );
 
           send({ type: "progress", progress: 62, stage: "Transcribing audio" });
           const transcript = await transcribeAudioWithOpenAI(
@@ -350,7 +403,22 @@ export async function POST(request) {
             "utf-8",
           );
 
-          send({ type: "progress", progress: 78, stage: "Uploading raw video" });
+          send({ type: "progress", progress: 70, stage: "Analyzing keyframes" });
+          const keyframeAnalysis = await analyzeKeyframes({
+            keyframePaths: keyframesForAnalysis,
+            keyframeTimestamps: timestampsForAnalysis,
+            outputPath: keyframeAnalysisPath,
+            onProgress: ({ index, total }) => {
+              const progress = 70 + Math.round((index / Math.max(total, 1)) * 8);
+              send({
+                type: "progress",
+                progress,
+                stage: `Analyzing keyframe ${index} of ${total}`,
+              });
+            },
+          });
+
+          send({ type: "progress", progress: 82, stage: "Uploading raw video" });
           await uploadToSupabaseStorage({
             bucket: STORAGE_BUCKETS.rawVideos,
             storagePath: rawVideoStoragePath,
@@ -358,7 +426,7 @@ export async function POST(request) {
             contentType: "video/mp4",
           });
 
-          send({ type: "progress", progress: 86, stage: "Uploading audio" });
+          send({ type: "progress", progress: 88, stage: "Uploading audio" });
           await uploadToSupabaseStorage({
             bucket: STORAGE_BUCKETS.audio,
             storagePath: audioStoragePath,
@@ -371,6 +439,14 @@ export async function POST(request) {
             bucket: STORAGE_BUCKETS.transcripts,
             storagePath: transcriptStoragePath,
             localPath: transcriptPath,
+            contentType: "application/json",
+          });
+
+          send({ type: "progress", progress: 95, stage: "Uploading keyframe analysis" });
+          await uploadToSupabaseStorage({
+            bucket: STORAGE_BUCKETS.analysis,
+            storagePath: keyframeAnalysisStoragePath,
+            localPath: keyframeAnalysisPath,
             contentType: "application/json",
           });
 
@@ -387,12 +463,20 @@ export async function POST(request) {
               rawVideoPath: rawVideoStoragePath,
               audioPath: audioStoragePath,
               transcriptPath: transcriptStoragePath,
+              keyframeAnalysisPath: keyframeAnalysisStoragePath,
               transcriptText: transcript.text || "",
               buckets: STORAGE_BUCKETS,
               frameCount: framePaths.length,
-              frameRate: ONE_FRAME_PER_SECOND,
+              frameRate: FRAME_SAMPLE_RATE,
+              keyFrameCount: keyframePaths.length,
+              analyzedKeyFrameCount: keyframesForAnalysis.length,
+              maxKeyframesToAnalyze: MAX_KEYFRAMES_TO_ANALYZE,
+              ocrTextFrameCount: keyframeAnalysis.frames.filter(
+                (frame) => frame.ocrText.length > 0,
+              ).length,
+              keyframeSceneThreshold: KEYFRAME_SCENE_THRESHOLD,
               message:
-                "YouTube video processed. Raw video, audio, and transcript were uploaded; local frames were deleted after processing.",
+                "YouTube video processed. Raw video, audio, transcript, and keyframe analysis were uploaded; local frames and keyframes were deleted after processing.",
             },
           });
         } catch (error) {

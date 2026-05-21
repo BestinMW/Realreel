@@ -13,9 +13,15 @@ type ProcessingResult = {
   rawVideoPath?: string;
   audioPath?: string;
   transcriptPath?: string;
+  keyframeAnalysisPath?: string;
   transcriptText?: string;
   frameCount?: number;
   frameRate?: number;
+  keyFrameCount?: number;
+  analyzedKeyFrameCount?: number;
+  maxKeyframesToAnalyze?: number;
+  ocrTextFrameCount?: number;
+  keyframeSceneThreshold?: number;
   message?: string;
 }
 
@@ -232,8 +238,13 @@ export default function Home() {
             <p><strong>Raw Video Path:</strong> {results.rawVideoPath}</p>
             <p><strong>Audio Path:</strong> {results.audioPath}</p>
             <p><strong>Transcript Path:</strong> {results.transcriptPath}</p>
-            <p><strong>Frames Analyzed Locally:</strong> {results.frameCount ?? 0}</p>
+            <p><strong>Keyframe Analysis Path:</strong> {results.keyframeAnalysisPath}</p>
+            <p><strong>Sampled Frames Extracted Locally:</strong> {results.frameCount ?? 0}</p>
             <p><strong>Frame Sampling:</strong> {results.frameRate ?? 1} frame per second</p>
+            <p><strong>Keyframes Extracted Locally:</strong> {results.keyFrameCount ?? 0}</p>
+            <p><strong>Keyframes Analyzed:</strong> {results.analyzedKeyFrameCount ?? 0} of max {results.maxKeyframesToAnalyze ?? 6}</p>
+            <p><strong>Keyframes With OCR Text:</strong> {results.ocrTextFrameCount ?? 0}</p>
+            <p><strong>Scene Threshold:</strong> {results.keyframeSceneThreshold ?? 0.35}</p>
             {results.transcriptText && (
               <p><strong>Transcript Preview:</strong> {results.transcriptText.slice(0, 280)}</p>
             )}
