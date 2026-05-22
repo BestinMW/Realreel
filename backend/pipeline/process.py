@@ -1,6 +1,7 @@
 import json
 import shutil
 import time
+import traceback
 from collections.abc import Generator
 from pathlib import Path
 
@@ -31,9 +32,11 @@ def process_youtube_video(youtube_url: str) -> Generator[dict, None, None]:
         return event
 
     job_dir: Path | None = None
+    stage = "Starting"
 
     try:
-        yield send({"type": "progress", "progress": 3, "stage": "Reading request"})
+        stage = "Reading request"
+        yield send({"type": "progress", "progress": 3, "stage": stage})
 
         video_id = parse_youtube_url(youtube_url)
         if not video_id:
@@ -54,13 +57,17 @@ def process_youtube_video(youtube_url: str) -> Generator[dict, None, None]:
         frames_dir.mkdir(parents=True, exist_ok=True)
         keyframes_dir.mkdir(parents=True, exist_ok=True)
 
-        yield send({"type": "progress", "progress": 8, "stage": "Preparing workspace"})
-        yield send({"type": "progress", "progress": 12, "stage": "Preparing downloader"})
-        yield send({"type": "progress", "progress": 18, "stage": "Downloading video"})
+        stage = "Preparing workspace"
+        yield send({"type": "progress", "progress": 8, "stage": stage})
+        stage = "Preparing downloader"
+        yield send({"type": "progress", "progress": 12, "stage": stage})
+        stage = "Downloading video"
+        yield send({"type": "progress", "progress": 18, "stage": stage})
 
         video_path = download_youtube_video(youtube_url, job_dir)
 
-        yield send({"type": "progress", "progress": 35, "stage": "Extracting audio"})
+        stage = "Extracting audio"
+        yield send({"type": "progress", "progress": 35, "stage": stage})
         extract_audio(video_path, audio_path)
 
         yield send(
@@ -212,10 +219,13 @@ def process_youtube_video(youtube_url: str) -> Generator[dict, None, None]:
             }
         )
     except Exception as exc:
+        message = str(exc) or "Failed to process YouTube video."
+        print(f"[process-youtube] {stage} failed: {message}", flush=True)
+        traceback.print_exc()
         yield send(
             {
                 "type": "error",
-                "message": str(exc) or "Failed to process YouTube video.",
+                "message": f"{stage}: {message}",
             }
         )
     finally:

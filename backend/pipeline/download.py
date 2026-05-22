@@ -1,30 +1,36 @@
-import subprocess
 from pathlib import Path
 
-from .tools import get_ytdlp_command
+from .tools import get_ffmpeg_location_for_ytdlp
 
 
 def download_youtube_video(youtube_url: str, job_dir: Path) -> Path:
+    try:
+        import yt_dlp
+    except ImportError as exc:
+        raise RuntimeError(
+            "yt-dlp is not installed. From backend/: pip install yt-dlp"
+        ) from exc
+
     job_dir.mkdir(parents=True, exist_ok=True)
     output_template = str(job_dir / "source.%(ext)s")
-    command = [
-        *get_ytdlp_command(),
-        youtube_url.strip(),
-        "--no-playlist",
-        "-f",
-        "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best",
-        "--merge-output-format",
-        "mp4",
-        "-o",
-        output_template,
-    ]
+    ffmpeg_location = get_ffmpeg_location_for_ytdlp()
+
+    ydl_opts = {
+        "outtmpl": output_template,
+        "format": "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best",
+        "merge_output_format": "mp4",
+        "noplaylist": True,
+        "ffmpeg_location": ffmpeg_location,
+        "quiet": True,
+        "no_warnings": True,
+    }
+
     try:
-        result = subprocess.run(command, capture_output=True, text=True, check=False)
-    except FileNotFoundError as exc:
-        raise RuntimeError(str(exc)) from exc
-    if result.returncode != 0:
-        details = result.stderr or result.stdout or "yt-dlp failed"
-        raise RuntimeError(details.strip())
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([youtube_url.strip()])
+    except Exception as exc:
+        raise RuntimeError(f"yt-dlp download failed: {exc}") from exc
+
     return find_downloaded_video(job_dir)
 
 

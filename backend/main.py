@@ -33,6 +33,7 @@ class ProcessRequest(BaseModel):
 
 @app.get("/health")
 def health() -> dict:
+    """Check API and resolved tool paths (restart backend after code changes)."""
     from pipeline.tools import get_ffmpeg_command, get_ytdlp_command, resolve_tesseract_path
 
     tools: dict[str, str | None] = {}
@@ -46,7 +47,7 @@ def health() -> dict:
         except FileNotFoundError as exc:
             tools[name] = f"missing: {exc}"
 
-    return {"ok": True, "tools": tools}
+    return {"ok": True, "version": "2026-05-22", "tools": tools}
 
 
 @app.post("/process-youtube")

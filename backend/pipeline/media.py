@@ -23,16 +23,49 @@ def run_ffmpeg(args: list[str], capture_stderr: bool = False) -> str:
     return result.stderr if capture_stderr else ""
 
 
+def probe_duration_seconds(video_path: Path) -> float:
+    command = [*get_ffmpeg_command(), "-i", str(video_path)]
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    output = (result.stderr or "") + (result.stdout or "")
+    match = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", output)
+    if not match:
+        return 0.0
+    hours, minutes, seconds = match.groups()
+    return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+
+
 def extract_audio(video_path: Path, audio_path: Path) -> None:
+    try:
+        run_ffmpeg(
+            [
+                "-i",
+                str(video_path),
+                "-map",
+                "0:a:0?",
+                "-vn",
+                "-ac",
+                "1",
+                "-ar",
+                "16000",
+                str(audio_path),
+            ]
+        )
+        if audio_path.exists() and audio_path.stat().st_size > 0:
+            return
+    except RuntimeError:
+        pass
+
+    duration = max(probe_duration_seconds(video_path), 0.1)
     run_ffmpeg(
         [
+            "-f",
+            "lavfi",
             "-i",
-            str(video_path),
-            "-vn",
+            f"anullsrc=channel_layout=mono:sample_rate=16000",
+            "-t",
+            str(duration),
             "-ac",
             "1",
-            "-ar",
-            "16000",
             str(audio_path),
         ]
     )
