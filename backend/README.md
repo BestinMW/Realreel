@@ -29,6 +29,30 @@ winget install UB-Mannheim.TesseractOCR
 
 Restart the terminal after installing.
 
+### Tesseract (on-screen text OCR)
+
+If keyframe analysis shows `Tesseract OCR binary not found`, install Tesseract then **restart the backend**:
+
+```powershell
+winget install UB-Mannheim.TesseractOCR
+```
+
+Finish the installer UI if it opens. Default path:
+
+`C:\Program Files\Tesseract-OCR\tesseract.exe`
+
+Optional — add to `backend/.env.local`:
+
+```env
+TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe
+```
+
+To skip OCR entirely (vision still runs):
+
+```env
+ENABLE_KEYFRAME_OCR=false
+```
+
 ## Local setup
 
 ```bash

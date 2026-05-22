@@ -11,29 +11,63 @@ DATE_LIKE_PATTERN = re.compile(
 )
 
 VISION_PROMPT = """Extract preprocessing indicators from this video keyframe.
-Return ONLY JSON matching this schema. No markdown.
-Do NOT transcribe text (OCR handles text). If you see text, only set hasTextOverlay true.
-Do NOT conclude the video is misleading or fake; only list observable signals.
+Return valid JSON only (use true/false for booleans, not the word boolean).
+Do NOT transcribe text (OCR handles text). If you see text, only set hasTextOverlay to true.
+Do NOT conclude the video is misleading or fake; only list observable signals."""
 
-{
-  "medium": "live_action|animation|screen_recording|mixed|unknown",
-  "hasTextOverlay": boolean,
-  "hasNewsStyleGraphics": boolean,
-  "hasChartOrGraph": boolean,
-  "hasSocialMediaUI": boolean,
-  "appearsScreenshot": boolean,
-  "peopleCount": "none|one|few|many|unknown",
-  "faceVisible": boolean,
-  "synthetic": {
-    "aiLikelihood": "low|medium|high|unknown",
-    "signals": ["watermark_visible|unnatural_face|warped_text|inconsistent_lighting|cgi_artifacts|none"]
-  },
-  "contextSignals": [
-    { "type": "stock_broll|urgent_overlay_on_calm_scene|chart_no_source|stale_looking_footage|possible_deepfake|other", "confidence": "low|medium|high" }
-  ],
-  "visibleClaimHint": string or null,
-  "confidence": number
-}"""
+GEMINI_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "medium": {
+            "type": "string",
+            "enum": [
+                "live_action",
+                "animation",
+                "screen_recording",
+                "mixed",
+                "unknown",
+            ],
+        },
+        "hasTextOverlay": {"type": "boolean"},
+        "hasNewsStyleGraphics": {"type": "boolean"},
+        "hasChartOrGraph": {"type": "boolean"},
+        "hasSocialMediaUI": {"type": "boolean"},
+        "appearsScreenshot": {"type": "boolean"},
+        "peopleCount": {
+            "type": "string",
+            "enum": ["none", "one", "few", "many", "unknown"],
+        },
+        "faceVisible": {"type": "boolean"},
+        "synthetic": {
+            "type": "object",
+            "properties": {
+                "aiLikelihood": {
+                    "type": "string",
+                    "enum": ["low", "medium", "high", "unknown"],
+                },
+                "signals": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+            },
+        },
+        "contextSignals": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "type": {"type": "string"},
+                    "confidence": {
+                        "type": "string",
+                        "enum": ["low", "medium", "high"],
+                    },
+                },
+            },
+        },
+        "visibleClaimHint": {"type": "string"},
+        "confidence": {"type": "number"},
+    },
+}
 
 MEDIUM_VALUES = {
     "live_action",

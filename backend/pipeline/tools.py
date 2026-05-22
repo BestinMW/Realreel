@@ -78,12 +78,18 @@ def resolve_tesseract_path() -> str | None:
         return env_path
 
     which_path = shutil.which("tesseract")
-    if which_path:
+    if which_path and Path(which_path).exists():
         return which_path
 
     for candidate in (
         Path(r"C:\Program Files\Tesseract-OCR\tesseract.exe"),
         Path(r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe"),
+        Path(os.environ.get("ProgramFiles", r"C:\Program Files"))
+        / "Tesseract-OCR"
+        / "tesseract.exe",
+        Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"))
+        / "Tesseract-OCR"
+        / "tesseract.exe",
     ):
         if candidate.exists():
             return str(candidate)

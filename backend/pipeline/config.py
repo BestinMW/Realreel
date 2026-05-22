@@ -26,7 +26,7 @@ MIN_WORD_CONFIDENCE = float(os.environ.get("TESSERACT_MIN_CONFIDENCE", "35"))
 OCR_ENABLED = os.environ.get("ENABLE_KEYFRAME_OCR", "true").lower() != "false"
 
 GEMINI_MODEL = os.environ.get("GEMINI_VISION_MODEL", "gemini-2.5-flash-lite")
-GEMINI_TIMEOUT_MS = int(os.environ.get("GEMINI_VISION_TIMEOUT_MS", "8000"))
+GEMINI_TIMEOUT_MS = int(os.environ.get("GEMINI_VISION_TIMEOUT_MS", "25000"))
 VISION_ENABLED = os.environ.get("ENABLE_KEYFRAME_VISION", "true").lower() != "false"
 
 CORS_ORIGINS = [
