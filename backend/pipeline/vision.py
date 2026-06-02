@@ -27,7 +27,11 @@ def empty_vision_result(error: str | None = None) -> dict:
 def build_vision_prompt(ocr_summary: str | None) -> str:
     if not ocr_summary:
         return VISION_PROMPT
-    return f"{VISION_PROMPT}\n\nOCR preprocessing summary (do not re-transcribe): {ocr_summary}"
+    return (
+        f"{VISION_PROMPT}\n\n"
+        "OCR preprocessing summary from Tesseract. Use this as context, but still "
+        f"read visible text yourself when possible: {ocr_summary}"
+    )
 
 
 def _strip_code_fence(text: str) -> str:

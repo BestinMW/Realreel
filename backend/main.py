@@ -9,12 +9,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from pipeline.config import CORS_ORIGINS
-from pipeline.process import process_youtube_video
-
 _backend_dir = Path(__file__).resolve().parent
 load_dotenv(_backend_dir / ".env")
 load_dotenv(_backend_dir / ".env.local", override=True)
+
+from pipeline.config import CORS_ORIGINS
+from pipeline.process import process_youtube_video
 
 app = FastAPI(title="RealReel Processor", version="1.0.0")
 
@@ -28,7 +28,8 @@ app.add_middleware(
 
 
 class ProcessRequest(BaseModel):
-    youtubeUrl: str
+    youtubeUrl: str | None = None
+    videoUrl: str | None = None
 
 
 @app.get("/health")
@@ -53,7 +54,8 @@ def health() -> dict:
 @app.post("/process-youtube")
 async def process_youtube(request: ProcessRequest) -> StreamingResponse:
     async def event_stream() -> AsyncGenerator[bytes, None]:
-        for event in process_youtube_video(request.youtubeUrl):
+        url = request.videoUrl or request.youtubeUrl or ""
+        for event in process_youtube_video(url):
             yield (json.dumps(event) + "\n").encode("utf-8")
 
     return StreamingResponse(

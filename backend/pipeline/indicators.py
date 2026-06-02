@@ -12,7 +12,8 @@ DATE_LIKE_PATTERN = re.compile(
 
 VISION_PROMPT = """Extract preprocessing indicators from this video keyframe.
 Return valid JSON only (use true/false for booleans, not the word boolean).
-Do NOT transcribe text (OCR handles text). If you see text, only set hasTextOverlay to true.
+Read visible signs, labels, captions, posters, storefront text, road signs, UI text, and other readable words.
+Only include text that is visible in the image. If uncertain, include the best reading and note uncertainty in context.
 Do NOT conclude the video is misleading or fake; only list observable signals."""
 
 GEMINI_RESPONSE_SCHEMA = {
@@ -64,6 +65,33 @@ GEMINI_RESPONSE_SCHEMA = {
                 },
             },
         },
+        "visibleText": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string"},
+                    "kind": {
+                        "type": "string",
+                        "enum": [
+                            "sign",
+                            "label",
+                            "caption",
+                            "poster",
+                            "storefront",
+                            "road_sign",
+                            "ui_text",
+                            "other",
+                        ],
+                    },
+                    "location": {"type": "string"},
+                    "confidence": {
+                        "type": "string",
+                        "enum": ["low", "medium", "high"],
+                    },
+                },
+            },
+        },
         "visibleClaimHint": {"type": "string"},
         "confidence": {"type": "number"},
     },
@@ -95,6 +123,16 @@ CONTEXT_SIGNAL_TYPES = {
     "other",
 }
 CONFIDENCE_LEVELS = {"low", "medium", "high"}
+VISIBLE_TEXT_KINDS = {
+    "sign",
+    "label",
+    "caption",
+    "poster",
+    "storefront",
+    "road_sign",
+    "ui_text",
+    "other",
+}
 
 DEFAULT_VISION_INDICATORS: dict[str, Any] = {
     "medium": "unknown",
@@ -107,6 +145,7 @@ DEFAULT_VISION_INDICATORS: dict[str, Any] = {
     "faceVisible": False,
     "synthetic": {"aiLikelihood": "unknown", "signals": []},
     "contextSignals": [],
+    "visibleText": [],
     "visibleClaimHint": None,
     "confidence": None,
 }
@@ -182,6 +221,12 @@ def normalize_vision_indicators(parsed: Any) -> dict[str, Any]:
         if (normalized := _normalize_context_signal(entry))
     ][:6]
 
+    visible_text = [
+        normalized
+        for entry in (parsed.get("visibleText") or [])
+        if (normalized := _normalize_visible_text(entry))
+    ][:12]
+
     visible_claim_hint = parsed.get("visibleClaimHint")
     if isinstance(visible_claim_hint, str) and visible_claim_hint.strip():
         visible_claim_hint = visible_claim_hint.strip()[:200]
@@ -214,6 +259,7 @@ def normalize_vision_indicators(parsed: Any) -> dict[str, Any]:
             "signals": signals,
         },
         "contextSignals": context_signals,
+        "visibleText": visible_text,
         "visibleClaimHint": visible_claim_hint,
         "confidence": confidence,
     }
@@ -271,6 +317,28 @@ def _normalize_context_signal(entry: Any) -> dict | None:
     confidence = entry.get("confidence")
     return {
         "type": signal_type if signal_type in CONTEXT_SIGNAL_TYPES else "other",
+        "confidence": confidence if confidence in CONFIDENCE_LEVELS else "low",
+    }
+
+
+def _normalize_visible_text(entry: Any) -> dict | None:
+    if not isinstance(entry, dict):
+        return None
+
+    text = entry.get("text")
+    if not isinstance(text, str) or not text.strip():
+        return None
+
+    kind = entry.get("kind")
+    location = entry.get("location")
+    confidence = entry.get("confidence")
+
+    return {
+        "text": text.strip()[:300],
+        "kind": kind if kind in VISIBLE_TEXT_KINDS else "other",
+        "location": location.strip()[:120]
+        if isinstance(location, str) and location.strip()
+        else None,
         "confidence": confidence if confidence in CONFIDENCE_LEVELS else "low",
     }
 
