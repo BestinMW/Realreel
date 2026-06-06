@@ -25,6 +25,7 @@ from .media import (
 from .storage import upload_to_supabase_storage
 from .transcribe import transcribe_audio_with_openai
 from .youtube import parse_youtube_url, safe_segment
+from .metadata_analyzer import MetadataAnalyzer
 
 
 def process_youtube_video(youtube_url: str) -> Generator[dict, None, None]:
@@ -218,6 +219,17 @@ def process_youtube_video(youtube_url: str) -> Generator[dict, None, None]:
                 },
             }
         )
+        #   ADD ANALYSIS STARTING FROM HERE (METADATA ANALYZER, CLAIM ANALYZER, etc.)
+        #   [change progress bar throughout to fit analysis stages]
+        #
+        #
+        #
+        #
+        #
+        #
+        #
+        #
+        #
     except Exception as exc:
         message = str(exc) or "Failed to process YouTube video."
         print(f"[process-youtube] {stage} failed: {message}", flush=True)

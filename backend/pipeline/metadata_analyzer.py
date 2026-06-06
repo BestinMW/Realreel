@@ -250,13 +250,7 @@ class MetadataAnalyzer:
     ) -> RuleResult:
         if not self._transcript_matches_any(transcript, CLAIMED_SOURCE_PHRASES):
             return RuleResult(flagged=False, score=0.0)
-
-
-        #checks inconsistencies in metadata depending on whether CLAIMED_SOURCE_PHRASES is in the transcript
-        #
-        #
-        #
-        # NEEDS TO BE CHANGED BECAUSE SCORE HERE HAS NOTHING TO DO WITH CLAIMS (EX. BREAKING NEWS FLAGGED BUT NOTHING HAPPENS AFTER)
+            
         fps = self._extract_video_fps(collected.video)
         encoder_value = self._extract_encoder(collected)
         high_fps = fps is not None and fps > 30
