@@ -17,6 +17,7 @@ from storage.assets.paths import (  # noqa: E402
 )
 from storage.db.models import Platform  # noqa: E402
 from storage.schemas import VideoCreate  # noqa: E402
+from storage.services.reposts import apply_repost_assessment_to_payload  # noqa: E402
 from storage.vector import validate_embedding  # noqa: E402
 
 
@@ -70,6 +71,35 @@ class StoragePipelineUnitTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             validate_embedding([0.0] * 3)
+
+    def test_repost_assessment_flags_misleading_context(self) -> None:
+        payload_data = {
+            "repost_probability": Decimal("0.1000"),
+            "misleading_context_score": Decimal("0.2000"),
+            "overall_risk_score": Decimal("0.3000"),
+            "reasons": {"summary": "Existing analysis."},
+        }
+        assessment = {
+            "isRepost": True,
+            "repostProbability": Decimal("0.9200"),
+            "matches": [
+                {
+                    "id": "00000000-0000-0000-0000-000000000001",
+                    "originalUrl": "https://example.com/older-video.mp4",
+                    "similarity": 0.94,
+                    "createdAt": "2024-01-01T00:00:00+00:00",
+                }
+            ],
+            "rationale": "Closest saved video is 94% similar.",
+        }
+
+        merged = apply_repost_assessment_to_payload(payload_data, assessment)
+
+        self.assertEqual(merged["repost_probability"], Decimal("0.9200"))
+        self.assertEqual(merged["misleading_context_score"], Decimal("0.6500"))
+        self.assertEqual(merged["overall_risk_score"], Decimal("0.6500"))
+        self.assertIn("possible_repost", merged["reasons"]["flags"])
+        self.assertEqual(merged["reasons"]["repost"]["matches"][0]["similarity"], 0.94)
 
 
 if __name__ == "__main__":
