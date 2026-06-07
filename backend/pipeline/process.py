@@ -99,6 +99,7 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
         temporal_analysis_path = job_dir / "temporal-consistency.json"
         visual_event_analysis_path = job_dir / "visual-event-analysis.json"
         claim_analysis_path = job_dir / "claim-analysis.json"
+        metadata_analysis_path = job_dir / "metadata-analysis.json"
         frames_dir = job_dir / "frames"
         keyframes_dir = job_dir / "keyframes"
         frames_dir.mkdir(parents=True, exist_ok=True)
@@ -168,6 +169,9 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
             f"{storage_prefix}/analysis/visual-event-analysis.json"
         )
         claim_analysis_storage_path = f"{storage_prefix}/analysis/claim-analysis.json"
+        metadata_analysis_storage_path = (
+            f"{storage_prefix}/analysis/metadata-analysis.json"
+        )
 
         yield send({"type": "progress", "progress": 62, "stage": "Transcribing audio"})
         transcript = transcribe_audio_with_openai(transcription_audio_path)
@@ -205,6 +209,21 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
 
         if keyframe_analysis is None:
             raise RuntimeError("Keyframe analysis did not complete.")
+
+        yield send({"type": "progress", "progress": 79, "stage": "Analyzing metadata"})
+        metadata_analysis = MetadataAnalyzer(original_url, video_path).analyze(
+            transcript_text=transcript.get("text"),
+        )
+        metadata_analysis["source"] = {
+            "url": original_url,
+            "platform": platform,
+            "externalId": video_id,
+            "transcriptPath": transcript_storage_path,
+        }
+        metadata_analysis_path.write_text(
+            json.dumps(metadata_analysis, indent=2),
+            encoding="utf-8",
+        )
 
         yield send({"type": "progress", "progress": 82, "stage": "Fact-checking claim"})
         claim_analysis = analyze_claim(
@@ -290,6 +309,16 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
             content_type="application/json",
         )
 
+        yield send(
+            {"type": "progress", "progress": 97, "stage": "Uploading metadata analysis"}
+        )
+        upload_to_supabase_storage(
+            bucket=STORAGE_BUCKETS["analysis"],
+            storage_path=metadata_analysis_storage_path,
+            local_path=metadata_analysis_path,
+            content_type="application/json",
+        )
+
         yield send({"type": "progress", "progress": 98, "stage": "Cleaning temporary files"})
         shutil.rmtree(job_dir, ignore_errors=True)
         job_dir = None
@@ -310,6 +339,13 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
                     "temporalAnalysisPath": temporal_analysis_storage_path,
                     "visualEventAnalysisPath": visual_event_analysis_storage_path,
                     "claimAnalysisPath": claim_analysis_storage_path,
+                    "metadataAnalysisPath": metadata_analysis_storage_path,
+                    "metadataScore": metadata_analysis.get("metadata_score"),
+                    "metadataReasons": metadata_analysis.get("reasons", []),
+                    "metadataRuleResults": metadata_analysis.get("rule_results", {}),
+                    "metadataCollectionErrors": metadata_analysis.get(
+                        "collection_errors", []
+                    ),
                     "claimAnalysisOk": claim_analysis.get("ok"),
                     "claim": claim_analysis.get("claim"),
                     "claimVerdict": claim_analysis.get("verdict"),
@@ -413,17 +449,6 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
                 },
             }
         )
-        #   ADD ANALYSIS STARTING FROM HERE (METADATA ANALYZER, CLAIM ANALYZER, etc.)
-        #   [change progress bar throughout to fit analysis stages]
-        #
-        #
-        #
-        #
-        #
-        #
-        #
-        #
-        #
     except Exception as exc:
         message = str(exc) or "Failed to process YouTube video."
         print(f"[process-youtube] {stage} failed: {message}", flush=True)
