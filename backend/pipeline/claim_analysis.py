@@ -88,10 +88,6 @@ def analyze_claim(
         verdict=normalized.get("verdict"),
         depicted_event=visual_risk["depictedEvent"],
     )
-    normalized["misleadingProbabilityRationale"] = _append_visual_rationale(
-        normalized.get("misleadingProbabilityRationale"),
-        visual_risk["visualAuthenticityRationale"],
-    )
     normalized = _apply_visual_event_fallback(
         normalized,
         keyframe_analysis=keyframe_analysis,
@@ -572,18 +568,6 @@ def _most_common(values: list[str]) -> str | None:
     if not values:
         return None
     return max(set(values), key=values.count)
-
-
-def _append_visual_rationale(
-    misleading_rationale: Any,
-    visual_rationale: str,
-) -> str:
-    parts = []
-    if isinstance(misleading_rationale, str) and misleading_rationale.strip():
-        parts.append(misleading_rationale.strip())
-    if visual_rationale:
-        parts.append(f"Visual authenticity: {visual_rationale}")
-    return " ".join(parts)[:1200]
 
 
 def _apply_visual_authenticity_guardrails(normalized: dict) -> dict:
