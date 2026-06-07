@@ -2,7 +2,12 @@ import re
 import subprocess
 from pathlib import Path
 
-from .config import FRAME_SAMPLE_RATE, KEYFRAME_SCENE_THRESHOLD, TRANSCRIPTION_LEAD_IN_SECONDS
+from .config import (
+    FRAME_SAMPLE_RATE,
+    KEYFRAME_INTERVAL_SECONDS,
+    KEYFRAME_SCENE_THRESHOLD,
+    TRANSCRIPTION_LEAD_IN_SECONDS,
+)
 from .tools import get_ffmpeg_command
 
 
@@ -113,12 +118,17 @@ def extract_sampled_frames(video_path: Path, frames_dir: Path) -> None:
 
 def extract_keyframes(video_path: Path, keyframes_dir: Path) -> list[float]:
     keyframes_dir.mkdir(parents=True, exist_ok=True)
+    interval = max(KEYFRAME_INTERVAL_SECONDS, 0.1)
     stderr = run_ffmpeg(
         [
             "-i",
             str(video_path),
             "-vf",
-            f"select=eq(n\\,0)+gt(scene\\,{KEYFRAME_SCENE_THRESHOLD}),showinfo",
+            (
+                "select="
+                f"eq(n\\,0)+gt(scene\\,{KEYFRAME_SCENE_THRESHOLD})+"
+                f"gte(t-prev_selected_t\\,{interval}),showinfo"
+            ),
             "-vsync",
             "vfr",
             "-q:v",

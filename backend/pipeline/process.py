@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .config import (
     FRAME_SAMPLE_RATE,
+    KEYFRAME_INTERVAL_SECONDS,
     KEYFRAME_SCENE_THRESHOLD,
     MAX_KEYFRAMES_TO_ANALYZE,
     STORAGE_BUCKETS,
@@ -24,8 +25,40 @@ from .media import (
     list_image_files,
 )
 from .storage import upload_to_supabase_storage
+from .temporal import analyze_temporal_consistency
 from .transcribe import transcribe_audio_with_openai
+from .metadata_analyzer import MetadataAnalyzer
+from .visual_events import analyze_visual_events
 from .youtube import parse_video_url, safe_segment
+
+
+def select_keyframes_for_analysis(
+    *,
+    keyframe_paths: list[Path],
+    keyframe_timestamps: list[float | None],
+    limit: int,
+) -> tuple[list[Path], list[float | None]]:
+    if limit <= 0:
+        return [], []
+    if limit == 1:
+        timestamp = keyframe_timestamps[0] if keyframe_timestamps else None
+        return keyframe_paths[:1], [timestamp] if keyframe_paths else []
+    if len(keyframe_paths) <= limit:
+        return keyframe_paths, keyframe_timestamps[: len(keyframe_paths)]
+
+    last_index = len(keyframe_paths) - 1
+    selected_indexes = sorted(
+        {
+            round(index * last_index / (limit - 1))
+            for index in range(limit)
+        }
+    )
+    selected_paths = [keyframe_paths[index] for index in selected_indexes]
+    selected_timestamps = [
+        keyframe_timestamps[index] if index < len(keyframe_timestamps) else None
+        for index in selected_indexes
+    ]
+    return selected_paths, selected_timestamps
 
 
 def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
@@ -63,6 +96,8 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
         transcription_audio_path = job_dir / "audio-for-transcript.wav"
         transcript_path = job_dir / "transcript.json"
         keyframe_analysis_path = job_dir / "keyframe-analysis.json"
+        temporal_analysis_path = job_dir / "temporal-consistency.json"
+        visual_event_analysis_path = job_dir / "visual-event-analysis.json"
         claim_analysis_path = job_dir / "claim-analysis.json"
         frames_dir = job_dir / "frames"
         keyframes_dir = job_dir / "keyframes"
@@ -99,8 +134,25 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
 
         frame_paths = list_image_files(frames_dir)
         keyframe_paths = list_image_files(keyframes_dir)
-        keyframes_for_analysis = keyframe_paths[:MAX_KEYFRAMES_TO_ANALYZE]
-        timestamps_for_analysis = keyframe_timestamps[: len(keyframes_for_analysis)]
+        keyframes_for_analysis, timestamps_for_analysis = select_keyframes_for_analysis(
+            keyframe_paths=keyframe_paths,
+            keyframe_timestamps=keyframe_timestamps,
+            limit=MAX_KEYFRAMES_TO_ANALYZE,
+        )
+
+        yield send({"type": "progress", "progress": 59, "stage": "Checking temporal consistency"})
+        temporal_analysis = analyze_temporal_consistency(
+            frame_paths=frame_paths,
+            keyframe_timestamps=keyframe_timestamps,
+            output_path=temporal_analysis_path,
+        )
+
+        yield send({"type": "progress", "progress": 60, "stage": "Scanning visual event frames"})
+        visual_event_analysis = analyze_visual_events(
+            frame_paths=frame_paths,
+            temporal_analysis=temporal_analysis,
+            output_path=visual_event_analysis_path,
+        )
 
         video_suffix = video_path.suffix or ".mp4"
         raw_video_storage_path = f"{storage_prefix}/raw/original{video_suffix}"
@@ -108,6 +160,12 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
         transcript_storage_path = f"{storage_prefix}/transcripts/transcript-und.json"
         keyframe_analysis_storage_path = (
             f"{storage_prefix}/analysis/keyframe-analysis.json"
+        )
+        temporal_analysis_storage_path = (
+            f"{storage_prefix}/analysis/temporal-consistency.json"
+        )
+        visual_event_analysis_storage_path = (
+            f"{storage_prefix}/analysis/visual-event-analysis.json"
         )
         claim_analysis_storage_path = f"{storage_prefix}/analysis/claim-analysis.json"
 
@@ -152,6 +210,8 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
         claim_analysis = analyze_claim(
             transcript=transcript,
             keyframe_analysis=keyframe_analysis,
+            temporal_analysis=temporal_analysis,
+            visual_event_analysis=visual_event_analysis,
         )
         claim_analysis["source"] = {
             "url": original_url,
@@ -159,6 +219,8 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
             "externalId": video_id,
             "transcriptPath": transcript_storage_path,
             "keyframeAnalysisPath": keyframe_analysis_storage_path,
+            "temporalAnalysisPath": temporal_analysis_storage_path,
+            "visualEventAnalysisPath": visual_event_analysis_storage_path,
         }
         claim_analysis_path.write_text(
             json.dumps(claim_analysis, indent=2), encoding="utf-8"
@@ -199,6 +261,26 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
         )
 
         yield send(
+            {"type": "progress", "progress": 95, "stage": "Uploading temporal analysis"}
+        )
+        upload_to_supabase_storage(
+            bucket=STORAGE_BUCKETS["analysis"],
+            storage_path=temporal_analysis_storage_path,
+            local_path=temporal_analysis_path,
+            content_type="application/json",
+        )
+
+        yield send(
+            {"type": "progress", "progress": 95, "stage": "Uploading visual event analysis"}
+        )
+        upload_to_supabase_storage(
+            bucket=STORAGE_BUCKETS["analysis"],
+            storage_path=visual_event_analysis_storage_path,
+            local_path=visual_event_analysis_path,
+            content_type="application/json",
+        )
+
+        yield send(
             {"type": "progress", "progress": 96, "stage": "Uploading claim analysis"}
         )
         upload_to_supabase_storage(
@@ -225,15 +307,28 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
                     "audioPath": audio_storage_path,
                     "transcriptPath": transcript_storage_path,
                     "keyframeAnalysisPath": keyframe_analysis_storage_path,
+                    "temporalAnalysisPath": temporal_analysis_storage_path,
+                    "visualEventAnalysisPath": visual_event_analysis_storage_path,
                     "claimAnalysisPath": claim_analysis_storage_path,
                     "claimAnalysisOk": claim_analysis.get("ok"),
                     "claim": claim_analysis.get("claim"),
                     "claimVerdict": claim_analysis.get("verdict"),
                     "claimConfidence": claim_analysis.get("confidence"),
+                    "recommendedAction": claim_analysis.get("recommendedAction"),
                     "misleadingProbability": claim_analysis.get("misleadingProbability"),
                     "misleadingProbabilityRationale": claim_analysis.get(
                         "misleadingProbabilityRationale"
                     ),
+                    "visualAuthenticityRisk": claim_analysis.get(
+                        "visualAuthenticityRisk"
+                    ),
+                    "visualAuthenticityRationale": claim_analysis.get(
+                        "visualAuthenticityRationale"
+                    ),
+                    "visualAuthenticitySignals": claim_analysis.get(
+                        "visualAuthenticitySignals", []
+                    ),
+                    "depictedEvent": claim_analysis.get("depictedEvent"),
                     "claimSummary": claim_analysis.get("summary"),
                     "claimEvidenceCount": len(claim_analysis.get("evidence") or []),
                     "transcriptText": transcript.get("text") or "",
@@ -266,11 +361,50 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
                         .get("indicators", {})
                         .get("visibleText")
                     ),
+                    "visionSceneDescriptionFrameCount": sum(
+                        1
+                        for frame in keyframe_analysis["frames"]
+                        if (
+                            frame.get("vision", {})
+                            .get("indicators", {})
+                            .get("sceneDescription")
+                        )
+                    ),
+                    "visionErrorCount": sum(
+                        1
+                        for frame in keyframe_analysis["frames"]
+                        if frame.get("vision", {}).get("error")
+                    ),
+                    "visionErrors": [
+                        frame.get("vision", {}).get("error")
+                        for frame in keyframe_analysis["frames"]
+                        if frame.get("vision", {}).get("error")
+                    ][:3],
+                    "visualMetadataQuality": claim_analysis.get(
+                        "visualMetadataQuality"
+                    ),
+                    "temporalInstabilityScore": temporal_analysis["summary"].get(
+                        "temporalInstabilityScore"
+                    ),
+                    "aiVisualRiskScore": temporal_analysis["summary"].get(
+                        "aiVisualRiskScore"
+                    ),
+                    "objectDisappearanceRisk": temporal_analysis["summary"].get(
+                        "objectDisappearanceRisk"
+                    ),
+                    "temporalRiskSignals": temporal_analysis["summary"].get(
+                        "riskSignals", []
+                    ),
+                    "visualEventSummary": visual_event_analysis.get("summary", {}),
+                    "eventWindowConsistency": visual_event_analysis.get(
+                        "eventWindowConsistency"
+                    ),
                     "crossModalHintCount": sum(
                         len(frame.get("hints") or [])
                         for frame in keyframe_analysis["frames"]
                     ),
                     "keyframeSceneThreshold": KEYFRAME_SCENE_THRESHOLD,
+                    "keyframeIntervalSeconds": KEYFRAME_INTERVAL_SECONDS,
                     "message": (
                         "Video processed. Raw video, audio, transcript, and "
                         "analysis files were uploaded; local frames and keyframes were "
@@ -279,6 +413,17 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
                 },
             }
         )
+        #   ADD ANALYSIS STARTING FROM HERE (METADATA ANALYZER, CLAIM ANALYZER, etc.)
+        #   [change progress bar throughout to fit analysis stages]
+        #
+        #
+        #
+        #
+        #
+        #
+        #
+        #
+        #
     except Exception as exc:
         message = str(exc) or "Failed to process YouTube video."
         print(f"[process-youtube] {stage} failed: {message}", flush=True)
