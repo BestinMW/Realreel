@@ -46,6 +46,45 @@ def get_ffmpeg_location_for_ytdlp() -> str:
 
 
 @lru_cache
+def get_ffprobe_command() -> list[str]:
+    env_path = os.environ.get("FFPROBE_PATH", "").strip()
+    if env_path:
+        return [env_path]
+
+    which_path = shutil.which("ffprobe")
+    if which_path:
+        return [which_path]
+
+    ffmpeg_path = Path(get_ffmpeg_command()[0])
+    sibling = ffmpeg_path.with_name("ffprobe.exe" if os.name == "nt" else "ffprobe")
+    if sibling.exists():
+        return [str(sibling)]
+
+    raise FileNotFoundError(
+        "ffprobe not found. Install ffmpeg (includes ffprobe) or set FFPROBE_PATH."
+    )
+
+
+def resolve_exiftool_path() -> str | None:
+    env_path = os.environ.get("EXIFTOOL_PATH", "").strip()
+    if env_path and Path(env_path).exists():
+        return env_path
+
+    which_path = shutil.which("exiftool")
+    if which_path and Path(which_path).exists():
+        return which_path
+
+    for candidate in (
+        Path(r"C:\Program Files\ExifTool\exiftool.exe"),
+        Path(r"C:\Program Files (x86)\ExifTool\exiftool.exe"),
+    ):
+        if candidate.exists():
+            return str(candidate)
+
+    return None
+
+
+@lru_cache
 def get_ytdlp_command() -> list[str]:
     env_path = os.environ.get("YTDLP_PATH", "").strip()
     if env_path:
