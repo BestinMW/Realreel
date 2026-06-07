@@ -79,6 +79,8 @@ class SimilarVideoRead(BaseModel):
     platform: Platform
     title: str | None
     thumbnail_path: str | None
+    file_sha256: str | None = None
+    created_at: datetime
     overall_risk_score: Decimal
     similarity: float
     distance: float

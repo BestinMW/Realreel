@@ -1,6 +1,7 @@
 # RealReel Backend (Python)
 
-YouTube processing API for Railway (or local dev). Downloads video, extracts audio/frames, transcribes with OpenAI, runs OCR + Gemini vision on keyframes, uploads to Supabase.
+Video processing API for Railway (or local dev). Supports YouTube, TikTok, Instagram, and direct video links where `yt-dlp` can download the media. Downloads video, extracts audio/frames, checks temporal frame consistency, transcribes with OpenAI, runs OCR + Gemini vision on keyframes, uploads to Supabase.
+It also creates a claim analysis artifact that uses OpenAI web search to identify and fact-check the main factual claim in the video.
 
 The Next.js app on Vercel proxies `/api/process-youtube` to this service.
 
@@ -67,6 +68,71 @@ uvicorn main:app --reload --port 8000
 
 Health check: http://localhost:8000/health
 
+Copy `backend/.env.example` to `backend/.env.local`, then fill in your real keys.
+
+```env
+OPENAI_API_KEY=your-openai-api-key
+GEMINI_API_KEY=your-gemini-api-key
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
+```
+
+### Claim analysis
+
+After transcription and keyframe analysis, the backend writes `claim-analysis.json` and uploads it to the analysis bucket. It includes the detected claim, verdict, confidence, summary, evidence links, missing context, and recommended action.
+
+Relevant settings:
+
+```env
+ENABLE_CLAIM_ANALYSIS=true
+OPENAI_CLAIM_MODEL=gpt-4.1-mini
+OPENAI_CLAIM_TIMEOUT_SECONDS=120
+```
+
+Set `ENABLE_CLAIM_ANALYSIS=false` to skip this stage while testing. This stage uses OpenAI Responses API web search, so it can add model-token cost plus web-search tool-call cost.
+
+### Vertex AI Gemini vision
+
+By default, keyframe vision uses the Google AI Studio Gemini API key. To use Gemini through Vertex AI and bill through a Google Cloud project instead:
+
+```env
+VISION_PROVIDER=vertex_ai
+VERTEX_AI_PROJECT_ID=cs180-agentic-lab
+VERTEX_AI_LOCATION=us-central1
+VERTEX_AI_GEMINI_MODEL=gemini-2.5-flash
+```
+
+Then authenticate the backend with Google Cloud Application Default Credentials:
+
+```powershell
+gcloud auth application-default login
+```
+
+For deployment, set `GOOGLE_APPLICATION_CREDENTIALS` to a service account JSON file path. The project must have billing enabled, the Vertex AI API enabled, and the calling user/service account needs Vertex AI permissions.
+
+### Temporal consistency
+
+The backend writes `temporal-consistency.json` after extracting sampled frames. It compares adjacent sampled frames and reports:
+
+- `temporalInstabilityScore`
+- `aiVisualRiskScore`
+- `objectDisappearanceRisk`
+- frame-pair risk signals such as large visual changes without a detected scene cut
+
+These are heuristic preprocessing signals, not a final fake/real verdict.
+
+### Keyframe extraction
+
+Keyframes are extracted with a hybrid strategy:
+
+- the first frame
+- detected scene changes above `KEYFRAME_SCENE_THRESHOLD`
+- periodic frames at least `KEYFRAME_INTERVAL_SECONDS` apart
+
+If more frames are extracted than `MAX_KEYFRAMES_TO_ANALYZE`, the analyzed set is spread across the whole video instead of taking only the earliest frames.
+
+For destructive or suspicious videos, the backend also scans up to `MAX_VISUAL_EVENT_FRAMES_TO_ANALYZE` sampled frames selected from temporal-risk regions plus an even spread across the video. Around suspicious temporal changes, it analyzes a before/during/after frame window controlled by `VISUAL_EVENT_WINDOW_RADIUS_FRAMES`. These results are saved as `visual-event-analysis.json` and fed into claim analysis so obvious synthetic explosion/fire/smoke cues can force a review instead of being treated as real footage.
+
 ## Frontend connection
 
 In `frontend/.env.local`:
@@ -100,10 +166,12 @@ uvicorn main:app --host 0.0.0.0 --port $PORT
 Body:
 
 ```json
-{ "youtubeUrl": "https://www.youtube.com/watch?v=..." }
+{ "videoUrl": "https://www.youtube.com/watch?v=..." }
 ```
 
 Response: NDJSON stream (`application/x-ndjson`) with `progress`, `complete`, and `error` events (same shape as the former Next.js route).
+
+The backend still accepts the older `{ "youtubeUrl": "..." }` field for compatibility. TikTok and public Instagram reels/posts/stories are passed to `yt-dlp`; private, age-gated, or login-required Instagram links may fail unless cookie support is added later.
 
 ## Layout
 
@@ -115,9 +183,11 @@ backend/
     download.py           # yt-dlp
     media.py              # ffmpeg
     transcribe.py         # OpenAI Whisper API
+    temporal.py           # sampled-frame temporal consistency
     ocr.py                # pytesseract + indicators
     vision.py             # Gemini
     keyframes.py          # per-frame analysis
+    claim_analysis.py     # OpenAI web-search fact checking
     indicators.py         # shared heuristics / schema
     storage.py            # Supabase uploads
 ```

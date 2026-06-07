@@ -12,7 +12,13 @@ DATE_LIKE_PATTERN = re.compile(
 
 VISION_PROMPT = """Extract preprocessing indicators from this video keyframe.
 Return valid JSON only (use true/false for booleans, not the word boolean).
-Do NOT transcribe text (OCR handles text). If you see text, only set hasTextOverlay to true.
+Always describe what is visible. sceneDescription must be a non-empty plain-English description for every nonblank image. If the frame is blank, black, blurred beyond recognition, or contains no meaningful content, explicitly say that.
+Always list the most important visible objects and actions, even if there is no text overlay and even if nothing suspicious is present.
+Read visible signs, labels, captions, posters, storefront text, road signs, UI text, and other readable words.
+Only include text that is visible in the image. If uncertain, include the best reading and note uncertainty in context.
+Briefly describe the visible scene, objects, and actions, especially destructive events like explosions, fires, collapses, crashes, or smoke.
+For explosions, fires, smoke, debris, or collapsing structures, scrutinize whether the event obeys plausible physics across light, shadows, scale, blast direction, debris motion, reflections, smoke behavior, and object continuity.
+List observable AI/synthetic visual artifacts such as warped geometry, inconsistent lighting, impossible physics, texture smearing, object disappearance, malformed details, physically implausible explosions, uniform/smeared fire, impossible smoke, or debris that appears/disappears.
 Do NOT conclude the video is misleading or fake; only list observable signals."""
 
 GEMINI_RESPONSE_SCHEMA = {
@@ -51,12 +57,70 @@ GEMINI_RESPONSE_SCHEMA = {
                 },
             },
         },
+        "sceneDescription": {"type": "string"},
+        "notableObjects": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "notableActions": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "destructiveEvent": {
+            "type": "object",
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "explosion",
+                        "fire",
+                        "collapse",
+                        "crash",
+                        "smoke",
+                        "violence",
+                        "none",
+                        "unknown",
+                    ],
+                },
+                "confidence": {
+                    "type": "string",
+                    "enum": ["low", "medium", "high"],
+                },
+            },
+        },
         "contextSignals": {
             "type": "array",
             "items": {
                 "type": "object",
                 "properties": {
                     "type": {"type": "string"},
+                    "confidence": {
+                        "type": "string",
+                        "enum": ["low", "medium", "high"],
+                    },
+                },
+            },
+        },
+        "visibleText": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string"},
+                    "kind": {
+                        "type": "string",
+                        "enum": [
+                            "sign",
+                            "label",
+                            "caption",
+                            "poster",
+                            "storefront",
+                            "road_sign",
+                            "ui_text",
+                            "other",
+                        ],
+                    },
+                    "location": {"type": "string"},
                     "confidence": {
                         "type": "string",
                         "enum": ["low", "medium", "high"],
@@ -82,9 +146,28 @@ SYNTHETIC_SIGNAL_VALUES = {
     "watermark_visible",
     "unnatural_face",
     "warped_text",
+    "warped_geometry",
     "inconsistent_lighting",
+    "impossible_physics",
+    "implausible_explosion",
+    "impossible_smoke",
+    "unnatural_fire",
+    "debris_discontinuity",
+    "texture_smearing",
+    "object_disappearance",
+    "malformed_details",
     "cgi_artifacts",
     "none",
+}
+DESTRUCTIVE_EVENT_TYPES = {
+    "explosion",
+    "fire",
+    "collapse",
+    "crash",
+    "smoke",
+    "violence",
+    "none",
+    "unknown",
 }
 CONTEXT_SIGNAL_TYPES = {
     "stock_broll",
@@ -95,6 +178,16 @@ CONTEXT_SIGNAL_TYPES = {
     "other",
 }
 CONFIDENCE_LEVELS = {"low", "medium", "high"}
+VISIBLE_TEXT_KINDS = {
+    "sign",
+    "label",
+    "caption",
+    "poster",
+    "storefront",
+    "road_sign",
+    "ui_text",
+    "other",
+}
 
 DEFAULT_VISION_INDICATORS: dict[str, Any] = {
     "medium": "unknown",
@@ -106,7 +199,12 @@ DEFAULT_VISION_INDICATORS: dict[str, Any] = {
     "peopleCount": "unknown",
     "faceVisible": False,
     "synthetic": {"aiLikelihood": "unknown", "signals": []},
+    "sceneDescription": "",
+    "notableObjects": [],
+    "notableActions": [],
+    "destructiveEvent": {"type": "unknown", "confidence": "low"},
     "contextSignals": [],
+    "visibleText": [],
     "visibleClaimHint": None,
     "confidence": None,
 }
@@ -182,6 +280,12 @@ def normalize_vision_indicators(parsed: Any) -> dict[str, Any]:
         if (normalized := _normalize_context_signal(entry))
     ][:6]
 
+    visible_text = [
+        normalized
+        for entry in (parsed.get("visibleText") or [])
+        if (normalized := _normalize_visible_text(entry))
+    ][:12]
+
     visible_claim_hint = parsed.get("visibleClaimHint")
     if isinstance(visible_claim_hint, str) and visible_claim_hint.strip():
         visible_claim_hint = visible_claim_hint.strip()[:200]
@@ -193,6 +297,14 @@ def normalize_vision_indicators(parsed: Any) -> dict[str, Any]:
         confidence = max(0.0, min(1.0, float(confidence)))
     else:
         confidence = None
+
+    destructive_event = (
+        parsed.get("destructiveEvent")
+        if isinstance(parsed.get("destructiveEvent"), dict)
+        else {}
+    )
+    destructive_type = destructive_event.get("type")
+    destructive_confidence = destructive_event.get("confidence")
 
     return {
         "medium": parsed.get("medium")
@@ -213,7 +325,19 @@ def normalize_vision_indicators(parsed: Any) -> dict[str, Any]:
             else "unknown",
             "signals": signals,
         },
+        "sceneDescription": str(parsed.get("sceneDescription") or "").strip()[:500],
+        "notableObjects": _string_items(parsed.get("notableObjects"), limit=12),
+        "notableActions": _string_items(parsed.get("notableActions"), limit=12),
+        "destructiveEvent": {
+            "type": destructive_type
+            if destructive_type in DESTRUCTIVE_EVENT_TYPES
+            else "unknown",
+            "confidence": destructive_confidence
+            if destructive_confidence in CONFIDENCE_LEVELS
+            else "low",
+        },
         "contextSignals": context_signals,
+        "visibleText": visible_text,
         "visibleClaimHint": visible_claim_hint,
         "confidence": confidence,
     }
@@ -273,6 +397,34 @@ def _normalize_context_signal(entry: Any) -> dict | None:
         "type": signal_type if signal_type in CONTEXT_SIGNAL_TYPES else "other",
         "confidence": confidence if confidence in CONFIDENCE_LEVELS else "low",
     }
+
+
+def _normalize_visible_text(entry: Any) -> dict | None:
+    if not isinstance(entry, dict):
+        return None
+
+    text = entry.get("text")
+    if not isinstance(text, str) or not text.strip():
+        return None
+
+    kind = entry.get("kind")
+    location = entry.get("location")
+    confidence = entry.get("confidence")
+
+    return {
+        "text": text.strip()[:300],
+        "kind": kind if kind in VISIBLE_TEXT_KINDS else "other",
+        "location": location.strip()[:120]
+        if isinstance(location, str) and location.strip()
+        else None,
+        "confidence": confidence if confidence in CONFIDENCE_LEVELS else "low",
+    }
+
+
+def _string_items(value: Any, *, limit: int) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip()[:120] for item in value[:limit] if str(item).strip()]
 
 
 def _bbox_area(box: dict | None) -> float:

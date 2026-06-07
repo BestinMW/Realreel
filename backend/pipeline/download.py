@@ -47,7 +47,8 @@ def extract_video_info(url: str) -> dict[str, Any]:
         raise RuntimeError(f"yt-dlp metadata extraction failed: {exc}") from exc
 
 
-def download_youtube_video(youtube_url: str, job_dir: Path) -> Path:
+
+def download_video(video_url: str, job_dir: Path) -> Path:
     try:
         import yt_dlp
     except ImportError as exc:
@@ -71,11 +72,15 @@ def download_youtube_video(youtube_url: str, job_dir: Path) -> Path:
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([youtube_url.strip()])
+            ydl.download([video_url.strip()])
     except Exception as exc:
         raise RuntimeError(f"yt-dlp download failed: {exc}") from exc
 
     return find_downloaded_video(job_dir)
+
+
+def download_youtube_video(youtube_url: str, job_dir: Path) -> Path:
+    return download_video(youtube_url, job_dir)
 
 
 def find_downloaded_video(job_dir: Path) -> Path:

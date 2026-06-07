@@ -1,31 +1,28 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
 type PreviewSource =
   | { type: "empty" }
   | { type: "invalid" }
+  | { type: "social"; platform: string; url: string }
   | { type: "video"; src: string }
-  | { type: "iframe"; src: string; title: string };
+  | { type: "iframe"; src: string; title: string; orientation?: "portrait" | "landscape" };
 
 type ProcessingResult = {
   success: boolean;
-  rawVideoPath?: string;
-  audioPath?: string;
-  transcriptPath?: string;
-  keyframeAnalysisPath?: string;
-  transcriptText?: string;
-  frameCount?: number;
-  frameRate?: number;
-  keyFrameCount?: number;
-  analyzedKeyFrameCount?: number;
-  maxKeyframesToAnalyze?: number;
-  ocrTextFrameCount?: number;
-  visionSignalFrameCount?: number;
-  crossModalHintCount?: number;
-  keyframeSceneThreshold?: number;
-  message?: string;
-}
+  claim?: string | null;
+  claimVerdict?: string;
+  claimConfidence?: number | null;
+  claimSummary?: string;
+  depictedEvent?: string | null;
+  misleadingProbability?: number | null;
+  misleadingProbabilityRationale?: string;
+  visualAuthenticityRisk?: number | null;
+  visualAuthenticityRationale?: string;
+  recommendedAction?: string;
+};
 
 type ProgressEvent =
   | { type: "progress"; progress: number; stage: string }
@@ -41,9 +38,23 @@ function getPreviewSource(input: string): PreviewSource {
 
   try {
     const url = new URL(trimmedInput);
+    const hostname = url.hostname.replace(/^www\./, "");
 
-    if (url.hostname.includes("youtube.com")) {
-      const videoId = url.searchParams.get("v");
+    if (hostname === "youtube.com" || hostname === "m.youtube.com") {
+      const videoId = url.searchParams.get("v") || getPathSegment(url, "shorts");
+
+      if (videoId) {
+        return {
+          type: "iframe",
+          src: `https://www.youtube.com/embed/${videoId}`,
+          title: "YouTube video preview",
+          orientation: url.pathname.includes("/shorts/") ? "portrait" : "landscape",
+        };
+      }
+    }
+
+    if (hostname === "youtu.be") {
+      const videoId = url.pathname.split("/").filter(Boolean)[0];
 
       if (videoId) {
         return {
@@ -54,19 +65,40 @@ function getPreviewSource(input: string): PreviewSource {
       }
     }
 
-    if (url.hostname === "youtu.be") {
-      const videoId = url.pathname.replace("/", "");
+    if (hostname === "instagram.com") {
+      const shortcode =
+        getPathSegment(url, "reel") ||
+        getPathSegment(url, "reels") ||
+        getPathSegment(url, "p");
+
+      if (shortcode) {
+        return {
+          type: "iframe",
+          src: `https://www.instagram.com/reel/${shortcode}/embed`,
+          title: "Instagram reel preview",
+          orientation: "portrait",
+        };
+      }
+
+      return { type: "social", platform: "Instagram", url: url.href };
+    }
+
+    if (hostname === "tiktok.com" || hostname.endsWith(".tiktok.com")) {
+      const videoId = getPathSegment(url, "video");
 
       if (videoId) {
         return {
           type: "iframe",
-          src: `https://www.youtube.com/embed/${videoId}`,
-          title: "YouTube video preview",
+          src: `https://www.tiktok.com/embed/v2/${videoId}`,
+          title: "TikTok video preview",
+          orientation: "portrait",
         };
       }
+
+      return { type: "social", platform: "TikTok", url: url.href };
     }
 
-    if (url.hostname.includes("vimeo.com")) {
+    if (hostname.includes("vimeo.com")) {
       const videoId = url.pathname.split("/").filter(Boolean).at(-1);
 
       if (videoId) {
@@ -84,15 +116,99 @@ function getPreviewSource(input: string): PreviewSource {
   }
 }
 
+function getPathSegment(url: URL, label: string) {
+  const parts = url.pathname.split("/").filter(Boolean);
+  const index = parts.indexOf(label);
+  return index >= 0 ? parts[index + 1] : null;
+}
+
+function isValidUrl(input: string) {
+  try {
+    new URL(input.trim());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getReliabilityScore(result: ProcessingResult | null) {
+  if (!result) {
+    return null;
+  }
+
+  const misleadingRisk =
+    typeof result.misleadingProbability === "number"
+      ? result.misleadingProbability
+      : null;
+  const visualRisk =
+    typeof result.visualAuthenticityRisk === "number"
+      ? result.visualAuthenticityRisk
+      : null;
+  const highestRisk = Math.max(misleadingRisk ?? 0, visualRisk ?? 0);
+
+  if (misleadingRisk !== null || visualRisk !== null) {
+    return Math.max(0, Math.min(100, Math.round((1 - highestRisk) * 100)));
+  }
+
+  if (typeof result.claimConfidence === "number") {
+    return Math.max(0, Math.min(100, Math.round(result.claimConfidence * 100)));
+  }
+
+  return null;
+}
+
+function getReliabilityExplanation(result: ProcessingResult | null) {
+  if (!result) {
+    return "";
+  }
+
+  const parts = [];
+  const visualSubject = result.depictedEvent || result.claim;
+
+  if (visualSubject) {
+    parts.push(`The video appears to show ${visualSubject}.`);
+  }
+
+  if (result.claimSummary) {
+    parts.push(result.claimSummary);
+  }
+
+  if (result.claimVerdict && result.claimVerdict !== "no_clear_claim") {
+    const readableVerdict = result.claimVerdict.replaceAll("_", " ");
+    parts.push(`The claim was rated ${readableVerdict}.`);
+  }
+
+  if (result.visualAuthenticityRationale) {
+    parts.push(`Visual authenticity: ${result.visualAuthenticityRationale}`);
+  }
+
+  if (result.misleadingProbabilityRationale) {
+    parts.push(`Misleading context: ${result.misleadingProbabilityRationale}`);
+  }
+
+  if (result.recommendedAction === "flag_for_review") {
+    parts.push("Because of those issues, this video should be reviewed before being trusted or shared.");
+  }
+
+  if (parts.length > 0) {
+    return parts.join(" ");
+  }
+
+  return "The analysis did not return enough detail to explain this score.";
+}
+
 export default function Home() {
   const [videoUrl, setVideoUrl] = useState("");
   const preview = useMemo(() => getPreviewSource(videoUrl), [videoUrl]);
-
   const [isProcessing, setIsProcessing] = useState(false);
   const [results, setResults] = useState<ProcessingResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [progressStage, setProgressStage] = useState("");
+
+  const urlReady = videoUrl.trim().length > 0 && isValidUrl(videoUrl);
+  const reliabilityScore = getReliabilityScore(results);
+  const reliabilityExplanation = getReliabilityExplanation(results);
 
   async function handleProcessClick() {
     setIsProcessing(true);
@@ -102,19 +218,19 @@ export default function Home() {
     setProgressStage("Starting");
 
     try {
-      const response = await fetch('/api/process-youtube', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ youtubeUrl: videoUrl }),
+      const response = await fetch("/api/process-youtube", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ videoUrl }),
       });
 
       if (!response.ok) {
         const data = await response.json().catch(() => null);
-        throw new Error(data.message || 'Something went wrong during processing.');
+        throw new Error(data?.message || "Something went wrong during processing.");
       }
 
       if (!response.body) {
-        throw new Error('The processing stream did not start.');
+        throw new Error("The processing stream did not start.");
       }
 
       const reader = response.body.getReader();
@@ -163,14 +279,16 @@ export default function Home() {
   }
 
   return (
-    <main className="page">
-      <section className="hero">
-        <p className="eyebrow">RealReel</p>
-        <h1>Preview and Process any video URL.</h1>
-        <p className="intro">
-          Paste a direct video link or YouTube URL to load a preview, then
-          click "Process" to extract audio and frames.
-        </p>
+    <main className="userPage">
+      <section className="userPanel" aria-live="polite">
+        <div className="brandRow">
+          <p className="eyebrow">RealReel</p>
+          <Link className="debugLink" href="/debug">
+            Debug
+          </Link>
+        </div>
+
+        <h1>Is it real?</h1>
 
         <div className="inputGroup">
           <label htmlFor="video-url">Video URL</label>
@@ -182,42 +300,53 @@ export default function Home() {
             placeholder="https://www.youtube.com/watch?v=..."
             disabled={isProcessing}
           />
-          <button onClick={handleProcessClick} disabled={isProcessing || preview.type === 'empty' || preview.type === 'invalid'}>
-            {isProcessing ? 'Processing...' : 'Process Video'}
+          <button
+            className="primaryButton"
+            onClick={handleProcessClick}
+            disabled={isProcessing || !urlReady}
+          >
+            {isProcessing ? "Processing..." : "Process Video"}
           </button>
         </div>
-      </section>
 
-      <section className="previewCard" aria-live="polite">
-        {preview.type === "empty" && (
-          <div className="emptyState">
-            <span>Paste a URL above to see the video preview here.</span>
-          </div>
-        )}
+        <section
+          className={`userPreview ${preview.type === "iframe" && preview.orientation === "portrait" ? "portraitPreview" : ""}`}
+          aria-live="polite"
+        >
+          {preview.type === "empty" && (
+            <div className="emptyState">
+              <span>Paste a video link to preview it here.</span>
+            </div>
+          )}
 
-        {preview.type === "invalid" && (
-          <div className="emptyState error">
-            <span>Please enter a valid full URL, including https://.</span>
-          </div>
-        )}
+          {preview.type === "invalid" && (
+            <div className="emptyState error">
+              <span>Please enter a full video URL, including https://.</span>
+            </div>
+          )}
 
-        {preview.type === "iframe" && (
-          <iframe
-            src={preview.src}
-            title={preview.title}
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-            allowFullScreen
-          />
-        )}
+          {preview.type === "iframe" && (
+            <iframe
+              src={preview.src}
+              title={preview.title}
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+            />
+          )}
 
-        {preview.type === "video" && (
-          <video controls src={preview.src}>
-            Your browser does not support the video tag.
-          </video>
-        )}
-      </section>
+          {preview.type === "social" && (
+            <div className="emptyState">
+              <span>{preview.platform} link ready to process. Preview is limited for this URL format.</span>
+            </div>
+          )}
 
-      <section className="resultsCard" aria-live="polite">
+          {preview.type === "video" && (
+            <video controls src={preview.src}>
+              Your browser does not support the video tag.
+            </video>
+          )}
+        </section>
+
         {isProcessing && (
           <div className="progressPanel">
             <div className="progressHeader">
@@ -229,29 +358,19 @@ export default function Home() {
             </div>
           </div>
         )}
+
         {error && (
-          <div className="emptyState error">
-            <span>Error: {error}</span>
+          <div className="scorePanel errorPanel">
+            <span>Error</span>
+            <strong>{error}</strong>
           </div>
         )}
-        {results && results.success && (
-          <div>
-            <h3>Uploaded to Storage</h3>
-            <p><strong>Raw Video Path:</strong> {results.rawVideoPath}</p>
-            <p><strong>Audio Path:</strong> {results.audioPath}</p>
-            <p><strong>Transcript Path:</strong> {results.transcriptPath}</p>
-            <p><strong>Keyframe Analysis Path:</strong> {results.keyframeAnalysisPath}</p>
-            <p><strong>Sampled Frames Extracted Locally:</strong> {results.frameCount ?? 0}</p>
-            <p><strong>Frame Sampling:</strong> {results.frameRate ?? 1} frame per second</p>
-            <p><strong>Keyframes Extracted Locally:</strong> {results.keyFrameCount ?? 0}</p>
-            <p><strong>Keyframes Analyzed:</strong> {results.analyzedKeyFrameCount ?? 0} of max {results.maxKeyframesToAnalyze ?? 6}</p>
-            <p><strong>Keyframes With OCR Text:</strong> {results.ocrTextFrameCount ?? 0}</p>
-            <p><strong>Keyframes With Vision Signals:</strong> {results.visionSignalFrameCount ?? 0}</p>
-            <p><strong>Cross-Modal Hints:</strong> {results.crossModalHintCount ?? 0}</p>
-            <p><strong>Scene Threshold:</strong> {results.keyframeSceneThreshold ?? 0.35}</p>
-            {results.transcriptText && (
-              <p><strong>Transcript Preview:</strong> {results.transcriptText.slice(0, 280)}</p>
-            )}
+
+        {results?.success && (
+          <div className="scorePanel">
+            <span>Reliability Score</span>
+            <strong>{reliabilityScore !== null ? `${reliabilityScore}%` : "N/A"}</strong>
+            {reliabilityExplanation && <p>{reliabilityExplanation}</p>}
           </div>
         )}
       </section>

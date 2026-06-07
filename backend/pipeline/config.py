@@ -7,7 +7,14 @@ UPLOADS_ROOT = Path(os.environ.get("UPLOADS_ROOT", REPO_ROOT / "tmp" / "uploads"
 
 FRAME_SAMPLE_RATE = float(os.environ.get("FRAME_SAMPLE_RATE", "1"))
 KEYFRAME_SCENE_THRESHOLD = float(os.environ.get("KEYFRAME_SCENE_THRESHOLD", "0.35"))
+KEYFRAME_INTERVAL_SECONDS = float(os.environ.get("KEYFRAME_INTERVAL_SECONDS", "5"))
 MAX_KEYFRAMES_TO_ANALYZE = int(os.environ.get("MAX_KEYFRAMES_TO_ANALYZE", "3"))
+MAX_VISUAL_EVENT_FRAMES_TO_ANALYZE = int(
+    os.environ.get("MAX_VISUAL_EVENT_FRAMES_TO_ANALYZE", "6")
+)
+VISUAL_EVENT_WINDOW_RADIUS_FRAMES = int(
+    os.environ.get("VISUAL_EVENT_WINDOW_RADIUS_FRAMES", "2")
+)
 TRANSCRIPTION_LEAD_IN_SECONDS = float(os.environ.get("TRANSCRIPTION_LEAD_IN_SECONDS", "1"))
 
 STORAGE_BUCKETS = {
@@ -28,6 +35,10 @@ OCR_ENABLED = os.environ.get("ENABLE_KEYFRAME_OCR", "true").lower() != "false"
 GEMINI_MODEL = os.environ.get("GEMINI_VISION_MODEL", "gemini-2.5-flash-lite")
 GEMINI_TIMEOUT_MS = int(os.environ.get("GEMINI_VISION_TIMEOUT_MS", "25000"))
 VISION_ENABLED = os.environ.get("ENABLE_KEYFRAME_VISION", "true").lower() != "false"
+VISION_PROVIDER = os.environ.get("VISION_PROVIDER", "gemini_api").lower()
+VERTEX_AI_PROJECT_ID = os.environ.get("VERTEX_AI_PROJECT_ID", "")
+VERTEX_AI_LOCATION = os.environ.get("VERTEX_AI_LOCATION", "us-central1")
+VERTEX_AI_GEMINI_MODEL = os.environ.get("VERTEX_AI_GEMINI_MODEL", "gemini-2.5-flash")
 
 CORS_ORIGINS = [
     origin.strip()

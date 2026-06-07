@@ -35,6 +35,8 @@ async def find_similar_videos(
             v.platform,
             v.title,
             v.thumbnail_path,
+            v.file_sha256,
+            v.created_at,
             v.overall_risk_score,
             (v.video_embedding <=> cast(:embedding as vector)) as distance,
             1 - (v.video_embedding <=> cast(:embedding as vector)) as similarity
