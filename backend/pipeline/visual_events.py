@@ -22,7 +22,13 @@ def analyze_visual_events(
     frame_paths: list[Path],
     temporal_analysis: dict,
     output_path: Path,
+    frame_sample_rate: float | None = None,
 ) -> dict[str, Any]:
+    sample_rate = frame_sample_rate if frame_sample_rate is not None else FRAME_SAMPLE_RATE
+
+    def timestamp_for_index(index: int) -> float:
+        return round(index / max(sample_rate, 0.001), 3)
+
     selected_frames = _select_event_frames(
         frame_paths=frame_paths,
         temporal_analysis=temporal_analysis,
@@ -34,7 +40,7 @@ def analyze_visual_events(
     for selected_frame in selected_frames:
         frame_path = selected_frame["path"]
         frame_index = selected_frame["index"]
-        timestamp_seconds = _timestamp_for_index(frame_index)
+        timestamp_seconds = timestamp_for_index(frame_index)
         vision = analyze_frame_with_gemini(
             frame_path,
             ocr_summary=(
@@ -182,10 +188,6 @@ def _evenly_spaced_indexes(count: int, limit: int) -> list[int]:
 
 def _ordered_selected(selected_by_index: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
     return [selected_by_index[index] for index in sorted(selected_by_index)]
-
-
-def _timestamp_for_index(index: int) -> float:
-    return round(index / max(FRAME_SAMPLE_RATE, 0.001), 3)
 
 
 def _summarize(frames: list[dict[str, Any]]) -> dict[str, Any]:

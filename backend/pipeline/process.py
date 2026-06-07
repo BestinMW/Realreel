@@ -6,7 +6,6 @@ from collections.abc import Generator
 from pathlib import Path
 
 from .config import (
-    FRAME_SAMPLE_RATE,
     KEYFRAME_INTERVAL_SECONDS,
     KEYFRAME_SCENE_THRESHOLD,
     MAX_KEYFRAMES_TO_ANALYZE,
@@ -128,7 +127,7 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
         create_audio_with_lead_in(audio_path, transcription_audio_path)
 
         yield send({"type": "progress", "progress": 50, "stage": "Extracting sampled frames"})
-        extract_sampled_frames(video_path, frames_dir)
+        frame_sample_rate = extract_sampled_frames(video_path, frames_dir)
 
         yield send({"type": "progress", "progress": 56, "stage": "Extracting keyframes"})
         keyframe_timestamps = extract_keyframes(video_path, keyframes_dir)
@@ -146,6 +145,7 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
             frame_paths=frame_paths,
             keyframe_timestamps=keyframe_timestamps,
             output_path=temporal_analysis_path,
+            frame_sample_rate=frame_sample_rate,
         )
 
         yield send({"type": "progress", "progress": 60, "stage": "Scanning visual event frames"})
@@ -153,6 +153,7 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
             frame_paths=frame_paths,
             temporal_analysis=temporal_analysis,
             output_path=visual_event_analysis_path,
+            frame_sample_rate=frame_sample_rate,
         )
 
         video_suffix = video_path.suffix or ".mp4"
@@ -370,7 +371,7 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
                     "transcriptText": transcript.get("text") or "",
                     "buckets": STORAGE_BUCKETS,
                     "frameCount": len(frame_paths),
-                    "frameRate": FRAME_SAMPLE_RATE,
+                    "frameRate": frame_sample_rate,
                     "keyFrameCount": len(keyframe_paths),
                     "analyzedKeyFrameCount": len(keyframes_for_analysis),
                     "maxKeyframesToAnalyze": MAX_KEYFRAMES_TO_ANALYZE,

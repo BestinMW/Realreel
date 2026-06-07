@@ -15,12 +15,18 @@ def analyze_temporal_consistency(
     frame_paths: list[Path],
     keyframe_timestamps: list[float],
     output_path: Path,
+    frame_sample_rate: float | None = None,
 ) -> dict[str, Any]:
+    sample_rate = frame_sample_rate if frame_sample_rate is not None else FRAME_SAMPLE_RATE
+
+    def timestamp_for_index(index: int) -> float:
+        return round(index / max(sample_rate, 0.001), 3)
+
     frames = [
         {
             "frame": frame_path.name,
-            "timestampSeconds": _timestamp_for_index(index),
-            "timestamp": seconds_to_timestamp(_timestamp_for_index(index)),
+            "timestampSeconds": timestamp_for_index(index),
+            "timestamp": seconds_to_timestamp(timestamp_for_index(index)),
         }
         for index, frame_path in enumerate(frame_paths)
     ]
@@ -61,7 +67,7 @@ def analyze_temporal_consistency(
         "providerVersions": {
             "temporal": "pillow-frame-diff-v1",
         },
-        "frameSamplingRate": FRAME_SAMPLE_RATE,
+        "frameSamplingRate": sample_rate,
         "frameCount": len(frames),
         "comparisonCount": len(comparisons),
         "summary": summary,
@@ -70,10 +76,6 @@ def analyze_temporal_consistency(
     }
     output_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
     return result
-
-
-def _timestamp_for_index(index: int) -> float:
-    return round(index / max(FRAME_SAMPLE_RATE, 0.001), 3)
 
 
 def _frame_signature(frame_path: Path) -> dict[str, Any]:
