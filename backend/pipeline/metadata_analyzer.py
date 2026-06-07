@@ -237,7 +237,7 @@ class MetadataAnalyzer:
         if match_date is None or upload_date is None:
             return RuleResult(flagged=False, score=0.0)
 
-        if (upload_date - match_date).days > 180:
+        if (upload_date - match_date.date()).days > 180:
             return RuleResult(
                 flagged=True,
                 score=0.8,
@@ -250,7 +250,7 @@ class MetadataAnalyzer:
     ) -> RuleResult:
         if not self._transcript_matches_any(transcript, CLAIMED_SOURCE_PHRASES):
             return RuleResult(flagged=False, score=0.0)
-            
+
         fps = self._extract_video_fps(collected.video)
         encoder_value = self._extract_encoder(collected)
         high_fps = fps is not None and fps > 30
@@ -305,6 +305,8 @@ class MetadataAnalyzer:
             pass
 
         for fmt in (
+            "%m/%d/%y",
+            "%m/%d/%Y",
             "%Y-%m-%d %H:%M:%S",
             "%Y-%m-%d",
             "%Y:%m:%d %H:%M:%S",
