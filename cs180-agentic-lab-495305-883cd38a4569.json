@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "cs180-agentic-lab-495305",
+  "private_key_id": "883cd38a4569403ed6f7a14d167c90f86608ca59",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC17oCaPhWlMMvX\nogFOYxOshAv5oEwT8WnmKW4ia8elEijAYqdHgqxddubo13kNYUkdUFMVuteN6qai\nS5F3wfp9BnQSk6axrA+WztwjznsIISdX/PRH5cG3e7b770cV6GNrQtCoMB3R1UYe\nRxm/2Axc9n/y3/9rN/tdJRIO1a0LGwT3wZIzeIJ2YGo8hT1ByMBJPOvF9fL0oxzG\nbeBUOPUzSG6fH6ArpqI9D1lbvwGGz09fPh1EF7yYP7LFUZ5Fuo4gWZ4MlStdbEc0\nadadm4ebgIZipVSRLPqsf7jNKRBCpbArXDRfRYgclmk97qC2Spkqc/4YBbuYVL1/\nVpPrf7CRAgMBAAECggEAJTPnzWK7t2Nyk543ySk+eS0pa7rpQ7y+rIe1U0mZ8jnz\n5l9mGJvylkw9rMh/IwrNUja+PrfN42HkAFUWopgimlVq/+98i2GFcI/NeW78Pq3U\n50u9QkSL5/Le+Ma10ReL2P+5PmNUfbewlnlwnQfXg10OzgIbL3grqSDu/+SW9amQ\njjQkQcyWl682P0St6+1U7cQPBBNOHQsC4QTWv1dDvSBeUqw2uyIWHkvaAYlu6M8d\nBCJwtMe7Y3kA8EOqZUCseQ27vDCE4YG0pdZRru47Gk2JC/vGObRGOekczjf18W5M\nEkM0cT9YI+BYFT8VpLP/S3mv5EozHJQ+o6mjFORzKQKBgQDvYnOt5IK3mXG+S4rA\nB5yQm6oEkGesAOj9U6hqrj0xQTiAw8Eu3HXDKhDXdCeonxuzW4ibtSJedzCjclUB\n2EmAQLSnPIxJd9uvYwS9ApXUyz6SGnxnV7ilaYtpej1gGpOPazsUu5XgY27m5ePh\n1XSGF9r9J8RaUoqE9+yuXlifBQKBgQDCjzAQdH/KMHEh45u1k70W/IO2H4jAwtKa\nnqBKds9cSe5RzLAlKSlg4uoGIhfg3vPJfg9xZMWqei7PRNbo1qMKa9oD7YiNMkwZ\nQSxCt/RTA77PW1A5yXn9GchGW8xUGruYI5SX47ilHJAuYyzpibBMtugjPLhmI210\np8SKy6yJHQKBgEda0l6AIdK2Y2g0vkwVOL8GF3y6ypxDvS9d03LRMx5OcZg4QYpF\nXrjo/hIq5nNl0ez5mNPI/1CnOJFP0DT3kpkvMGo1Kx/vIUW7PztT3POMDb+hM3ne\ndQShXFP5gvf1lAyJCxhX/gnfubwLxIyZgt1BmR4iz22Y8v9Fo4AqUUI9AoGAB2mv\nOiFGMSzxUoo6h4uOe865Mfo3mqiRn6SFlPC769dBRkqXN4M++VsL8Zng8QdtoHK2\nIermAR3QpMMJsStkYORFFTs6pa6R6bBrAEvD+lm9LmdbQihkBnmyAMREn7u5BA3u\n/m6FvXy+HZZXwrolRnb9l0IcAIA/Dl/KBEPIWh0CgYEAzSOkbsoZpqcBDJKvI6JU\nyjsVLw436G+V/Jxp9zfPnkDL0dSfFM1uS5t8JF08InyRWU5YSix9NIYg8YYUdgHW\ndnxu94DuIKBkT6H7nEYZJXRJydJ1cjbHwvxH/xm/aOZF94NiaPCQ7VQAgO8ATg1P\nxbRzoakeERKwccIUwsxMJUk=\n-----END PRIVATE KEY-----\n",
+  "client_email": "cs180lab@cs180-agentic-lab-495305.iam.gserviceaccount.com",
+  "client_id": "102195875925625712413",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/cs180lab%40cs180-agentic-lab-495305.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}

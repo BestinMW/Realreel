@@ -8,6 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from storage.assets.paths import all_asset_prefixes
 from storage.db.models import Video
 from storage.schemas import VideoCreate
+from storage.services.reposts import (
+    apply_repost_assessment_to_payload,
+    assess_repost_risk,
+)
 
 
 async def save_analyzed_video(session: AsyncSession, payload: VideoCreate) -> Video:
@@ -18,6 +22,12 @@ async def save_analyzed_video(session: AsyncSession, payload: VideoCreate) -> Vi
     """
     data = payload.model_dump(mode="python")
     data["original_url"] = str(payload.original_url)
+    repost_assessment = await assess_repost_risk(
+        session,
+        embedding=payload.video_embedding,
+        file_sha256=payload.file_sha256,
+    )
+    data = apply_repost_assessment_to_payload(data, repost_assessment)
     video = Video(**data)
     session.add(video)
     await session.flush()
