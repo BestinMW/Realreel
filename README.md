@@ -48,18 +48,9 @@ The backend imports `storage/` at runtime (repo root is added to `sys.path` in `
 | `storage/.env` | Same Supabase/Postgres vars (backend loads this as a fallback) |
 | `frontend/.env.local` | `PROCESSOR_URL=http://localhost:8000` only |
 
-Copy `backend/.env.example` → `backend/.env.local` and fill in keys. For repost detection and DB saves, add `DATABASE_URL` (async SQLAlchemy URL, e.g. `postgresql+asyncpg://...`).
-
-### Supabase (one-time)
-
-1. Run `storage/schema.sql` in Supabase **SQL Editor** (creates `videos` table, indexes, private buckets).
-2. If the table already exists, run the migration block at the bottom of `schema.sql` to add `platform_upload_date`.
-
-See [storage/README.md](storage/README.md) for schema and bucket details.
-
 ## Tests
 
-Unit tests (no live DB required):
+Unit tests:
 
 ```bash
 python scripts/run_tests.py
