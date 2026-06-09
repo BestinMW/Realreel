@@ -6,6 +6,10 @@ REPO_ROOT = BACKEND_ROOT.parent
 UPLOADS_ROOT = Path(os.environ.get("UPLOADS_ROOT", REPO_ROOT / "tmp" / "uploads"))
 
 FRAME_SAMPLE_RATE = float(os.environ.get("FRAME_SAMPLE_RATE", "1"))
+ADAPTIVE_FRAME_SAMPLING = os.environ.get("ADAPTIVE_FRAME_SAMPLING", "true").lower() != "false"
+TARGET_SAMPLED_FRAMES = int(os.environ.get("TARGET_SAMPLED_FRAMES", "30"))
+MIN_SAMPLED_FRAMES = int(os.environ.get("MIN_SAMPLED_FRAMES", "8"))
+MAX_SAMPLED_FRAMES = int(os.environ.get("MAX_SAMPLED_FRAMES", "60"))
 KEYFRAME_SCENE_THRESHOLD = float(os.environ.get("KEYFRAME_SCENE_THRESHOLD", "0.35"))
 KEYFRAME_INTERVAL_SECONDS = float(os.environ.get("KEYFRAME_INTERVAL_SECONDS", "5"))
 MAX_KEYFRAMES_TO_ANALYZE = int(os.environ.get("MAX_KEYFRAMES_TO_ANALYZE", "3"))

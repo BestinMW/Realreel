@@ -143,7 +143,7 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
         create_audio_with_lead_in(audio_path, transcription_audio_path)
 
         yield send({"type": "progress", "progress": 50, "stage": "Extracting sampled frames"})
-        extract_sampled_frames(video_path, frames_dir)
+        frame_sample_rate = extract_sampled_frames(video_path, frames_dir)
 
         yield send({"type": "progress", "progress": 56, "stage": "Extracting keyframes"})
         keyframe_timestamps = extract_keyframes(video_path, keyframes_dir)
@@ -172,7 +172,9 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
             frame_paths=frame_paths,
             keyframe_timestamps=keyframe_timestamps,
             output_path=temporal_analysis_path,
+            frame_sample_rate=frame_sample_rate,
         )
+
 
         if FAST_PROCESSING_MODE:
             visual_event_analysis = {
@@ -528,7 +530,7 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
                     "transcriptText": transcript.get("text") or "",
                     "buckets": STORAGE_BUCKETS,
                     "frameCount": len(frame_paths),
-                    "frameRate": FRAME_SAMPLE_RATE,
+                    "frameRate": frame_sample_rate,
                     "keyFrameCount": len(keyframe_paths),
                     "analyzedKeyFrameCount": len(keyframes_for_analysis),
                     "maxKeyframesToAnalyze": MAX_KEYFRAMES_TO_ANALYZE,
