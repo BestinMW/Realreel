@@ -53,11 +53,24 @@ def _split_camel_case(value: str) -> str:
     return " ".join(words)
 
 
+def _discover_tests(project_root: Path) -> unittest.TestSuite:
+    loader = unittest.defaultTestLoader
+    suite = unittest.TestSuite()
+    for relative_dir in ("backend/tests", "storage/tests", "frontend/tests"):
+        test_dir = project_root / relative_dir
+        if test_dir.is_dir():
+            suite.addTests(loader.discover(str(test_dir), top_level_dir=str(project_root)))
+    return suite
+
+
 def main() -> int:
-    project_root = Path(__file__).resolve().parent
-    suite = unittest.defaultTestLoader.discover(str(project_root / "tests"))
-    runner = FriendlyTestRunner(verbosity=0)
-    result = runner.run(suite)
+    project_root = Path(__file__).resolve().parents[1]
+    for path in (project_root, project_root / "backend"):
+        path_str = str(path)
+        if path_str not in sys.path:
+            sys.path.insert(0, path_str)
+
+    result = FriendlyTestRunner(verbosity=0).run(_discover_tests(project_root))
     return 0 if result.wasSuccessful() else 1
 
 

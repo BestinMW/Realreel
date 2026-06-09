@@ -95,7 +95,7 @@ After setting your environment variables and running `storage/schema.sql` in
 Supabase, run the smoke test:
 
 ```bash
-python storage/smoke_test.py
+python storage/tests/smoke_test.py
 ```
 
 The smoke test creates a fake completed video row, retrieves it by URL and file

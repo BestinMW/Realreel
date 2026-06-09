@@ -8,7 +8,7 @@ from decimal import Decimal
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
@@ -57,7 +57,7 @@ async def main() -> None:
         credibility_score=Decimal("0.9000"),
         overall_risk_score=Decimal("0.2500"),
         confidence=Decimal("0.9500"),
-        reasons={"summary": "Smoke test row created by storage/smoke_test.py"},
+        reasons={"summary": "Smoke test row created by storage/tests/smoke_test.py"},
     )
 
     async with AsyncSessionLocal() as session:
