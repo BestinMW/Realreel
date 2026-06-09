@@ -22,6 +22,7 @@ export async function POST(request) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body,
+      signal: request.signal,
     });
   } catch (error) {
     return Response.json(

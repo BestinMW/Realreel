@@ -1,4 +1,5 @@
 import json
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -6,6 +7,8 @@ from typing import Any
 from .config import (
     FRAME_SAMPLE_RATE,
     GEMINI_MODEL,
+    MAX_FRAME_ANALYSIS_WORKERS,
+    MAX_VISUAL_EVENT_FALLBACK_FRAMES,
     MAX_VISUAL_EVENT_FRAMES_TO_ANALYZE,
     VISUAL_EVENT_WINDOW_RADIUS_FRAMES,
 )
@@ -29,39 +32,9 @@ def analyze_visual_events(
         limit=MAX_VISUAL_EVENT_FRAMES_TO_ANALYZE,
         window_radius=VISUAL_EVENT_WINDOW_RADIUS_FRAMES,
     )
-    frames = []
-
-    for selected_frame in selected_frames:
-        frame_path = selected_frame["path"]
-        frame_index = selected_frame["index"]
-        timestamp_seconds = _timestamp_for_index(frame_index)
-        vision = analyze_frame_with_gemini(
-            frame_path,
-            ocr_summary=(
-                "sampled frame event-window scan; OCR not run for this frame; "
-                f"selectionReason={selected_frame['reason']}; "
-                f"windowCenter={selected_frame.get('windowCenterFrame') or 'none'}"
-            ),
-        )
-        authenticity = analyze_frame_authenticity(frame_path)
-        indicators = vision.get("indicators") or {}
-        frames.append(
-            {
-                "frame": frame_path.name,
-                "timestamp": seconds_to_timestamp(timestamp_seconds),
-                "timestampSeconds": timestamp_seconds,
-                "selectionReason": selected_frame["reason"],
-                "windowCenterFrame": selected_frame.get("windowCenterFrame"),
-                "windowOffsetFrames": selected_frame.get("windowOffsetFrames"),
-                "sourceComparison": selected_frame.get("sourceComparison"),
-                "vision": {
-                    "ok": vision.get("ok"),
-                    "indicators": indicators,
-                    "error": vision.get("error"),
-                },
-                "authenticity": authenticity,
-            }
-        )
+    max_workers = max(1, min(MAX_FRAME_ANALYSIS_WORKERS, len(selected_frames) or 1))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        frames = list(executor.map(_analyze_selected_event_frame, selected_frames))
 
     event_window_consistency = analyze_event_window_consistency(frames)
     result = {
@@ -69,11 +42,12 @@ def analyze_visual_events(
         "generatedAt": datetime.now(timezone.utc).isoformat(),
         "providerVersions": {
             "vision": GEMINI_MODEL,
-            "selection": "temporal-event-window-plus-even-sampled-v1",
+            "selection": "temporal-event-window-plus-limited-fallback-v2",
         },
         "frameSamplingRate": FRAME_SAMPLE_RATE,
         "frameCount": len(frames),
         "maxFrames": MAX_VISUAL_EVENT_FRAMES_TO_ANALYZE,
+        "fallbackMaxFrames": MAX_VISUAL_EVENT_FALLBACK_FRAMES,
         "windowRadiusFrames": VISUAL_EVENT_WINDOW_RADIUS_FRAMES,
         "eventWindowConsistency": event_window_consistency,
         "summary": _summarize(frames),
@@ -81,6 +55,37 @@ def analyze_visual_events(
     }
     output_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
     return result
+
+
+def _analyze_selected_event_frame(selected_frame: dict[str, Any]) -> dict[str, Any]:
+    frame_path = selected_frame["path"]
+    frame_index = selected_frame["index"]
+    timestamp_seconds = _timestamp_for_index(frame_index)
+    vision = analyze_frame_with_gemini(
+        frame_path,
+        ocr_summary=(
+            "sampled frame event-window scan; OCR not run for this frame; "
+            f"selectionReason={selected_frame['reason']}; "
+            f"windowCenter={selected_frame.get('windowCenterFrame') or 'none'}"
+        ),
+    )
+    authenticity = analyze_frame_authenticity(frame_path)
+    indicators = vision.get("indicators") or {}
+    return {
+        "frame": frame_path.name,
+        "timestamp": seconds_to_timestamp(timestamp_seconds),
+        "timestampSeconds": timestamp_seconds,
+        "selectionReason": selected_frame["reason"],
+        "windowCenterFrame": selected_frame.get("windowCenterFrame"),
+        "windowOffsetFrames": selected_frame.get("windowOffsetFrames"),
+        "sourceComparison": selected_frame.get("sourceComparison"),
+        "vision": {
+            "ok": vision.get("ok"),
+            "indicators": indicators,
+            "error": vision.get("error"),
+        },
+        "authenticity": authenticity,
+    }
 
 
 def _select_event_frames(
@@ -139,7 +144,8 @@ def _select_event_frames(
             if len(selected_by_index) >= limit:
                 return _ordered_selected(selected_by_index)
 
-    for index in _evenly_spaced_indexes(len(frame_paths), limit):
+    fallback_limit = min(limit, max(0, MAX_VISUAL_EVENT_FALLBACK_FRAMES))
+    for index in _evenly_spaced_indexes(len(frame_paths), fallback_limit):
         selected_by_index.setdefault(
             index,
             {

@@ -1,10 +1,11 @@
 import json
 import os
+import asyncio
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -52,11 +53,14 @@ def health() -> dict:
 
 
 @app.post("/process-youtube")
-async def process_youtube(request: ProcessRequest) -> StreamingResponse:
+async def process_youtube(payload: ProcessRequest, request: Request) -> StreamingResponse:
     async def event_stream() -> AsyncGenerator[bytes, None]:
-        url = request.videoUrl or request.youtubeUrl or ""
+        url = payload.videoUrl or payload.youtubeUrl or ""
         for event in process_youtube_video(url):
+            if await request.is_disconnected():
+                break
             yield (json.dumps(event) + "\n").encode("utf-8")
+            await asyncio.sleep(0)
 
     return StreamingResponse(
         event_stream(),

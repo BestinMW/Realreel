@@ -3,6 +3,7 @@ import shutil
 import time
 import traceback
 from collections.abc import Generator
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from .config import (
@@ -38,6 +39,9 @@ from .transcribe import transcribe_audio_with_openai
 from .metadata_analyzer import MetadataAnalyzer
 from .visual_events import analyze_visual_events
 from .youtube import parse_video_url, safe_segment
+
+
+UPLOAD_WORKERS = 6
 
 
 def select_keyframes_for_analysis(
@@ -355,87 +359,99 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
                     }
                 )
 
-        stage = "Uploading audio"
+        stage = "Uploading analysis artifacts"
         yield send({"type": "progress", "progress": 90, "stage": stage})
-        upload_to_supabase_storage(
-            bucket=STORAGE_BUCKETS["audio"],
-            storage_path=audio_storage_path,
-            local_path=audio_path,
-            content_type="audio/wav",
-        )
-
+        upload_tasks = [
+            {
+                "name": "audio",
+                "bucket": STORAGE_BUCKETS["audio"],
+                "storage_path": audio_storage_path,
+                "local_path": audio_path,
+                "content_type": "audio/wav",
+            },
+            {
+                "name": "transcript",
+                "bucket": STORAGE_BUCKETS["transcripts"],
+                "storage_path": transcript_storage_path,
+                "local_path": transcript_path,
+                "content_type": "application/json",
+            },
+            {
+                "name": "keyframe analysis",
+                "bucket": STORAGE_BUCKETS["analysis"],
+                "storage_path": keyframe_analysis_storage_path,
+                "local_path": keyframe_analysis_path,
+                "content_type": "application/json",
+            },
+            {
+                "name": "temporal analysis",
+                "bucket": STORAGE_BUCKETS["analysis"],
+                "storage_path": temporal_analysis_storage_path,
+                "local_path": temporal_analysis_path,
+                "content_type": "application/json",
+            },
+            {
+                "name": "visual event analysis",
+                "bucket": STORAGE_BUCKETS["analysis"],
+                "storage_path": visual_event_analysis_storage_path,
+                "local_path": visual_event_analysis_path,
+                "content_type": "application/json",
+            },
+            {
+                "name": "claim analysis",
+                "bucket": STORAGE_BUCKETS["analysis"],
+                "storage_path": claim_analysis_storage_path,
+                "local_path": claim_analysis_path,
+                "content_type": "application/json",
+            },
+            {
+                "name": "metadata analysis",
+                "bucket": STORAGE_BUCKETS["analysis"],
+                "storage_path": metadata_analysis_storage_path,
+                "local_path": metadata_analysis_path,
+                "content_type": "application/json",
+            },
+            {
+                "name": "thumbnail analysis",
+                "bucket": STORAGE_BUCKETS["analysis"],
+                "storage_path": thumbnail_analysis_storage_path,
+                "local_path": thumbnail_analysis_path,
+                "content_type": "application/json",
+            },
+        ]
         if local_thumbnail_path is not None:
-            stage = "Uploading thumbnail"
-            yield send({"type": "progress", "progress": 92, "stage": stage})
-            upload_to_supabase_storage(
-                bucket=STORAGE_BUCKETS["thumbnails"],
-                storage_path=thumbnail_storage_path,
-                local_path=local_thumbnail_path,
-                content_type="image/jpeg",
+            upload_tasks.append(
+                {
+                    "name": "thumbnail",
+                    "bucket": STORAGE_BUCKETS["thumbnails"],
+                    "storage_path": thumbnail_storage_path,
+                    "local_path": local_thumbnail_path,
+                    "content_type": "image/jpeg",
+                }
             )
-
-        stage = "Uploading transcript"
-        yield send({"type": "progress", "progress": 93, "stage": stage})
-        upload_to_supabase_storage(
-            bucket=STORAGE_BUCKETS["transcripts"],
-            storage_path=transcript_storage_path,
-            local_path=transcript_path,
-            content_type="application/json",
-        )
-
-        stage = "Uploading keyframe analysis"
-        yield send({"type": "progress", "progress": 95, "stage": stage})
-        upload_to_supabase_storage(
-            bucket=STORAGE_BUCKETS["analysis"],
-            storage_path=keyframe_analysis_storage_path,
-            local_path=keyframe_analysis_path,
-            content_type="application/json",
-        )
-
-        stage = "Uploading temporal analysis"
-        yield send({"type": "progress", "progress": 95, "stage": stage})
-        upload_to_supabase_storage(
-            bucket=STORAGE_BUCKETS["analysis"],
-            storage_path=temporal_analysis_storage_path,
-            local_path=temporal_analysis_path,
-            content_type="application/json",
-        )
-
-        stage = "Uploading visual event analysis"
-        yield send({"type": "progress", "progress": 95, "stage": stage})
-        upload_to_supabase_storage(
-            bucket=STORAGE_BUCKETS["analysis"],
-            storage_path=visual_event_analysis_storage_path,
-            local_path=visual_event_analysis_path,
-            content_type="application/json",
-        )
-
-        stage = "Uploading claim analysis"
-        yield send({"type": "progress", "progress": 96, "stage": stage})
-        upload_to_supabase_storage(
-            bucket=STORAGE_BUCKETS["analysis"],
-            storage_path=claim_analysis_storage_path,
-            local_path=claim_analysis_path,
-            content_type="application/json",
-        )
-
-        stage = "Uploading metadata analysis"
-        yield send({"type": "progress", "progress": 97, "stage": stage})
-        upload_to_supabase_storage(
-            bucket=STORAGE_BUCKETS["analysis"],
-            storage_path=metadata_analysis_storage_path,
-            local_path=metadata_analysis_path,
-            content_type="application/json",
-        )
-
-        stage = "Uploading thumbnail analysis"
-        yield send({"type": "progress", "progress": 97, "stage": stage})
-        upload_to_supabase_storage(
-            bucket=STORAGE_BUCKETS["analysis"],
-            storage_path=thumbnail_analysis_storage_path,
-            local_path=thumbnail_analysis_path,
-            content_type="application/json",
-        )
+        with ThreadPoolExecutor(max_workers=min(UPLOAD_WORKERS, len(upload_tasks))) as executor:
+            futures = {
+                executor.submit(
+                    upload_to_supabase_storage,
+                    bucket=task["bucket"],
+                    storage_path=task["storage_path"],
+                    local_path=task["local_path"],
+                    content_type=task["content_type"],
+                ): task["name"]
+                for task in upload_tasks
+            }
+            completed_uploads = 0
+            for future in as_completed(futures):
+                future.result()
+                completed_uploads += 1
+                progress = 90 + round((completed_uploads / len(upload_tasks)) * 7)
+                yield send(
+                    {
+                        "type": "progress",
+                        "progress": progress,
+                        "stage": f"Uploaded {futures[future]}",
+                    }
+                )
 
         yield send({"type": "progress", "progress": 98, "stage": "Cleaning temporary files"})
         shutil.rmtree(job_dir, ignore_errors=True)
