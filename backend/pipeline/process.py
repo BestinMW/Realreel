@@ -7,15 +7,17 @@ from pathlib import Path
 
 from .config import (
     FRAME_SAMPLE_RATE,
+    FAST_PROCESSING_MODE,
     KEYFRAME_INTERVAL_SECONDS,
     KEYFRAME_SCENE_THRESHOLD,
     MAX_KEYFRAMES_TO_ANALYZE,
     STORAGE_BUCKETS,
     TRANSCRIPTION_LEAD_IN_SECONDS,
+    UPLOAD_RAW_VIDEO,
     UPLOADS_ROOT,
 )
 from .claim_analysis import analyze_claim
-from .download import download_video
+from .download import download_video_with_info
 from .keyframes import analyze_keyframes_stream
 from .media import (
     create_audio_with_lead_in,
@@ -24,8 +26,14 @@ from .media import (
     extract_sampled_frames,
     list_image_files,
 )
-from .storage import upload_to_supabase_storage
+from .storage import SupabaseStorageUploadError, upload_to_supabase_storage
 from .temporal import analyze_temporal_consistency
+from .thumbnail import (
+    analyze_thumbnail_clickbait,
+    create_thumbnail_fallback,
+    download_thumbnail,
+    get_thumbnail_url_from_info,
+)
 from .transcribe import transcribe_audio_with_openai
 from .metadata_analyzer import MetadataAnalyzer
 from .visual_events import analyze_visual_events
@@ -100,6 +108,8 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
         visual_event_analysis_path = job_dir / "visual-event-analysis.json"
         claim_analysis_path = job_dir / "claim-analysis.json"
         metadata_analysis_path = job_dir / "metadata-analysis.json"
+        thumbnail_path = job_dir / "thumbnail.jpg"
+        thumbnail_analysis_path = job_dir / "thumbnail-clickbait-analysis.json"
         frames_dir = job_dir / "frames"
         keyframes_dir = job_dir / "keyframes"
         frames_dir.mkdir(parents=True, exist_ok=True)
@@ -112,7 +122,8 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
         stage = "Downloading video"
         yield send({"type": "progress", "progress": 18, "stage": stage})
 
-        video_path = download_video(original_url, job_dir)
+        video_path, download_info = download_video_with_info(original_url, job_dir)
+        thumbnail_url = get_thumbnail_url_from_info(download_info)
 
         stage = "Extracting audio"
         yield send({"type": "progress", "progress": 35, "stage": stage})
@@ -135,6 +146,17 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
 
         frame_paths = list_image_files(frames_dir)
         keyframe_paths = list_image_files(keyframes_dir)
+        local_thumbnail_path = None
+        if thumbnail_url:
+            local_thumbnail_path = download_thumbnail(
+                thumbnail_url=thumbnail_url,
+                output_path=thumbnail_path,
+            )
+        if local_thumbnail_path is None:
+            local_thumbnail_path = create_thumbnail_fallback(
+                keyframe_paths=keyframe_paths,
+                output_path=thumbnail_path,
+            )
         keyframes_for_analysis, timestamps_for_analysis = select_keyframes_for_analysis(
             keyframe_paths=keyframe_paths,
             keyframe_timestamps=keyframe_timestamps,
@@ -148,16 +170,30 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
             output_path=temporal_analysis_path,
         )
 
-        yield send({"type": "progress", "progress": 60, "stage": "Scanning visual event frames"})
-        visual_event_analysis = analyze_visual_events(
-            frame_paths=frame_paths,
-            temporal_analysis=temporal_analysis,
-            output_path=visual_event_analysis_path,
-        )
+        if FAST_PROCESSING_MODE:
+            visual_event_analysis = {
+                "summary": {},
+                "frames": [],
+                "eventWindowConsistency": {},
+                "skipped": True,
+                "skipReason": "FAST_PROCESSING_MODE=true",
+            }
+            visual_event_analysis_path.write_text(
+                json.dumps(visual_event_analysis, indent=2),
+                encoding="utf-8",
+            )
+        else:
+            yield send({"type": "progress", "progress": 60, "stage": "Scanning visual event frames"})
+            visual_event_analysis = analyze_visual_events(
+                frame_paths=frame_paths,
+                temporal_analysis=temporal_analysis,
+                output_path=visual_event_analysis_path,
+            )
 
         video_suffix = video_path.suffix or ".mp4"
         raw_video_storage_path = f"{storage_prefix}/raw/original{video_suffix}"
         audio_storage_path = f"{storage_prefix}/audio/audio.wav"
+        thumbnail_storage_path = f"{storage_prefix}/thumbnails/thumbnail.jpg"
         transcript_storage_path = f"{storage_prefix}/transcripts/transcript-und.json"
         keyframe_analysis_storage_path = (
             f"{storage_prefix}/analysis/keyframe-analysis.json"
@@ -171,6 +207,9 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
         claim_analysis_storage_path = f"{storage_prefix}/analysis/claim-analysis.json"
         metadata_analysis_storage_path = (
             f"{storage_prefix}/analysis/metadata-analysis.json"
+        )
+        thumbnail_analysis_storage_path = (
+            f"{storage_prefix}/analysis/thumbnail-clickbait-analysis.json"
         )
 
         yield send({"type": "progress", "progress": 62, "stage": "Transcribing audio"})
@@ -211,9 +250,19 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
             raise RuntimeError("Keyframe analysis did not complete.")
 
         yield send({"type": "progress", "progress": 79, "stage": "Analyzing metadata"})
-        metadata_analysis = MetadataAnalyzer(original_url, video_path).analyze(
-            transcript_text=transcript.get("text"),
-        )
+        if FAST_PROCESSING_MODE:
+            metadata_analysis = {
+                "metadata_score": None,
+                "reasons": [],
+                "rule_results": {},
+                "collection_errors": [],
+                "skipped": True,
+                "skipReason": "FAST_PROCESSING_MODE=true",
+            }
+        else:
+            metadata_analysis = MetadataAnalyzer(original_url, video_path).analyze(
+                transcript_text=transcript.get("text"),
+            )
         metadata_analysis["source"] = {
             "url": original_url,
             "platform": platform,
@@ -245,15 +294,69 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
             json.dumps(claim_analysis, indent=2), encoding="utf-8"
         )
 
-        yield send({"type": "progress", "progress": 86, "stage": "Uploading raw video"})
-        upload_to_supabase_storage(
-            bucket=STORAGE_BUCKETS["rawVideos"],
-            storage_path=raw_video_storage_path,
-            local_path=video_path,
-            content_type="video/mp4",
+        yield send({"type": "progress", "progress": 84, "stage": "Checking thumbnail fit"})
+        if FAST_PROCESSING_MODE:
+            thumbnail_clickbait_analysis = {
+                "ok": False,
+                "clickbaitScore": None,
+                "riskLevel": "unknown",
+                "thumbnailSummary": "",
+                "rationale": "",
+                "mismatches": [],
+                "supportingSignals": [],
+                "error": "FAST_PROCESSING_MODE=true",
+            }
+        else:
+            thumbnail_clickbait_analysis = analyze_thumbnail_clickbait(
+                thumbnail_path=local_thumbnail_path,
+                transcript=transcript,
+                claim_analysis=claim_analysis,
+                keyframe_analysis=keyframe_analysis,
+                visual_event_analysis=visual_event_analysis,
+            )
+        thumbnail_analysis_path.write_text(
+            json.dumps(thumbnail_clickbait_analysis, indent=2),
+            encoding="utf-8",
         )
 
-        yield send({"type": "progress", "progress": 90, "stage": "Uploading audio"})
+        stage = "Uploading raw video"
+        yield send({"type": "progress", "progress": 86, "stage": stage})
+        raw_video_upload_skipped_reason = None
+        if not UPLOAD_RAW_VIDEO:
+            raw_video_storage_path = None
+            raw_video_upload_skipped_reason = (
+                "UPLOAD_RAW_VIDEO=false skips storing the full MP4. RealReel kept "
+                "the transcript, thumbnail, and analysis artifacts."
+            )
+        elif FAST_PROCESSING_MODE:
+            raw_video_storage_path = None
+            raw_video_upload_skipped_reason = "FAST_PROCESSING_MODE=true skips raw MP4 upload."
+        else:
+            try:
+                upload_to_supabase_storage(
+                    bucket=STORAGE_BUCKETS["rawVideos"],
+                    storage_path=raw_video_storage_path,
+                    local_path=video_path,
+                    content_type="video/mp4",
+                )
+            except SupabaseStorageUploadError as exc:
+                if not exc.is_payload_too_large:
+                    raise
+                raw_video_storage_path = None
+                raw_video_upload_skipped_reason = (
+                    "Raw video was too large for Supabase Storage, so RealReel skipped "
+                    "storing the full MP4 and kept the transcript, thumbnail, and analysis artifacts."
+                )
+                yield send(
+                    {
+                        "type": "progress",
+                        "progress": 88,
+                        "stage": "Raw video too large; continuing with analysis uploads",
+                    }
+                )
+
+        stage = "Uploading audio"
+        yield send({"type": "progress", "progress": 90, "stage": stage})
         upload_to_supabase_storage(
             bucket=STORAGE_BUCKETS["audio"],
             storage_path=audio_storage_path,
@@ -261,7 +364,18 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
             content_type="audio/wav",
         )
 
-        yield send({"type": "progress", "progress": 93, "stage": "Uploading transcript"})
+        if local_thumbnail_path is not None:
+            stage = "Uploading thumbnail"
+            yield send({"type": "progress", "progress": 92, "stage": stage})
+            upload_to_supabase_storage(
+                bucket=STORAGE_BUCKETS["thumbnails"],
+                storage_path=thumbnail_storage_path,
+                local_path=local_thumbnail_path,
+                content_type="image/jpeg",
+            )
+
+        stage = "Uploading transcript"
+        yield send({"type": "progress", "progress": 93, "stage": stage})
         upload_to_supabase_storage(
             bucket=STORAGE_BUCKETS["transcripts"],
             storage_path=transcript_storage_path,
@@ -269,9 +383,8 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
             content_type="application/json",
         )
 
-        yield send(
-            {"type": "progress", "progress": 95, "stage": "Uploading keyframe analysis"}
-        )
+        stage = "Uploading keyframe analysis"
+        yield send({"type": "progress", "progress": 95, "stage": stage})
         upload_to_supabase_storage(
             bucket=STORAGE_BUCKETS["analysis"],
             storage_path=keyframe_analysis_storage_path,
@@ -279,9 +392,8 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
             content_type="application/json",
         )
 
-        yield send(
-            {"type": "progress", "progress": 95, "stage": "Uploading temporal analysis"}
-        )
+        stage = "Uploading temporal analysis"
+        yield send({"type": "progress", "progress": 95, "stage": stage})
         upload_to_supabase_storage(
             bucket=STORAGE_BUCKETS["analysis"],
             storage_path=temporal_analysis_storage_path,
@@ -289,9 +401,8 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
             content_type="application/json",
         )
 
-        yield send(
-            {"type": "progress", "progress": 95, "stage": "Uploading visual event analysis"}
-        )
+        stage = "Uploading visual event analysis"
+        yield send({"type": "progress", "progress": 95, "stage": stage})
         upload_to_supabase_storage(
             bucket=STORAGE_BUCKETS["analysis"],
             storage_path=visual_event_analysis_storage_path,
@@ -299,9 +410,8 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
             content_type="application/json",
         )
 
-        yield send(
-            {"type": "progress", "progress": 96, "stage": "Uploading claim analysis"}
-        )
+        stage = "Uploading claim analysis"
+        yield send({"type": "progress", "progress": 96, "stage": stage})
         upload_to_supabase_storage(
             bucket=STORAGE_BUCKETS["analysis"],
             storage_path=claim_analysis_storage_path,
@@ -309,13 +419,21 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
             content_type="application/json",
         )
 
-        yield send(
-            {"type": "progress", "progress": 97, "stage": "Uploading metadata analysis"}
-        )
+        stage = "Uploading metadata analysis"
+        yield send({"type": "progress", "progress": 97, "stage": stage})
         upload_to_supabase_storage(
             bucket=STORAGE_BUCKETS["analysis"],
             storage_path=metadata_analysis_storage_path,
             local_path=metadata_analysis_path,
+            content_type="application/json",
+        )
+
+        stage = "Uploading thumbnail analysis"
+        yield send({"type": "progress", "progress": 97, "stage": stage})
+        upload_to_supabase_storage(
+            bucket=STORAGE_BUCKETS["analysis"],
+            storage_path=thumbnail_analysis_storage_path,
+            local_path=thumbnail_analysis_path,
             content_type="application/json",
         )
 
@@ -333,13 +451,18 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
                     "platform": platform,
                     "sourceUrl": original_url,
                     "rawVideoPath": raw_video_storage_path,
+                    "rawVideoUploadSkippedReason": raw_video_upload_skipped_reason,
                     "audioPath": audio_storage_path,
+                    "thumbnailPath": thumbnail_storage_path
+                    if local_thumbnail_path is not None
+                    else None,
                     "transcriptPath": transcript_storage_path,
                     "keyframeAnalysisPath": keyframe_analysis_storage_path,
                     "temporalAnalysisPath": temporal_analysis_storage_path,
                     "visualEventAnalysisPath": visual_event_analysis_storage_path,
                     "claimAnalysisPath": claim_analysis_storage_path,
                     "metadataAnalysisPath": metadata_analysis_storage_path,
+                    "thumbnailAnalysisPath": thumbnail_analysis_storage_path,
                     "metadataScore": metadata_analysis.get("metadata_score"),
                     "metadataReasons": metadata_analysis.get("reasons", []),
                     "metadataRuleResults": metadata_analysis.get("rule_results", {}),
@@ -366,6 +489,25 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
                     ),
                     "depictedEvent": claim_analysis.get("depictedEvent"),
                     "claimSummary": claim_analysis.get("summary"),
+                    "thumbnailClickbaitScore": thumbnail_clickbait_analysis.get(
+                        "clickbaitScore"
+                    ),
+                    "thumbnailClickbaitRiskLevel": thumbnail_clickbait_analysis.get(
+                        "riskLevel"
+                    ),
+                    "thumbnailSummary": thumbnail_clickbait_analysis.get(
+                        "thumbnailSummary"
+                    ),
+                    "thumbnailClickbaitRationale": thumbnail_clickbait_analysis.get(
+                        "rationale"
+                    ),
+                    "thumbnailClickbaitMismatches": thumbnail_clickbait_analysis.get(
+                        "mismatches", []
+                    ),
+                    "thumbnailClickbaitSupportingSignals": thumbnail_clickbait_analysis.get(
+                        "supportingSignals", []
+                    ),
+                    "thumbnailClickbaitError": thumbnail_clickbait_analysis.get("error"),
                     "claimEvidenceCount": len(claim_analysis.get("evidence") or []),
                     "transcriptText": transcript.get("text") or "",
                     "buckets": STORAGE_BUCKETS,

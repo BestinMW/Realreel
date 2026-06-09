@@ -419,6 +419,14 @@ def _estimate_visual_authenticity_risk(
                 "object_disappearance",
                 "texture_smearing",
                 "cgi_artifacts",
+                "cgi_animation",
+                "generated_art_aesthetic",
+                "surreal_incoherent_scene",
+                "uncanny_body",
+                "over_smooth_textures",
+                "artificial_depth",
+                "impossible_scene_composition",
+                "ai_music_video_style",
             }:
                 synthetic_scores.append(0.72)
 
@@ -499,6 +507,14 @@ def _estimate_visual_authenticity_risk(
                 or "object_disappearance" in signal
                 or "texture_smearing" in signal
                 or "cgi_artifacts" in signal
+                or "cgi_animation" in signal
+                or "generated_art_aesthetic" in signal
+                or "surreal_incoherent_scene" in signal
+                or "uncanny_body" in signal
+                or "over_smooth_textures" in signal
+                or "artificial_depth" in signal
+                or "impossible_scene_composition" in signal
+                or "ai_music_video_style" in signal
             )
         )
         if strong_synthetic_signal:

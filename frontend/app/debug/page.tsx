@@ -11,12 +11,15 @@ type PreviewSource =
 
 type ProcessingResult = {
   success: boolean;
-  rawVideoPath?: string;
+  rawVideoPath?: string | null;
+  rawVideoUploadSkippedReason?: string | null;
   audioPath?: string;
   transcriptPath?: string;
   keyframeAnalysisPath?: string;
   temporalAnalysisPath?: string;
   claimAnalysisPath?: string;
+  thumbnailPath?: string | null;
+  thumbnailAnalysisPath?: string;
   claimAnalysisOk?: boolean;
   claim?: string | null;
   claimVerdict?: string;
@@ -29,6 +32,13 @@ type ProcessingResult = {
   visualAuthenticitySignals?: string[];
   depictedEvent?: string | null;
   claimSummary?: string;
+  thumbnailClickbaitScore?: number | null;
+  thumbnailClickbaitRiskLevel?: string;
+  thumbnailSummary?: string;
+  thumbnailClickbaitRationale?: string;
+  thumbnailClickbaitMismatches?: string[];
+  thumbnailClickbaitSupportingSignals?: string[];
+  thumbnailClickbaitError?: string | null;
   claimEvidenceCount?: number;
   transcriptText?: string;
   frameCount?: number;
@@ -335,12 +345,17 @@ export default function Home() {
         {results && results.success && (
           <div>
             <h3>Uploaded to Storage</h3>
-            <p><strong>Raw Video Path:</strong> {results.rawVideoPath}</p>
+            <p><strong>Raw Video Path:</strong> {results.rawVideoPath || "N/A"}</p>
+            {results.rawVideoUploadSkippedReason && (
+              <p><strong>Raw Video Upload:</strong> {results.rawVideoUploadSkippedReason}</p>
+            )}
             <p><strong>Audio Path:</strong> {results.audioPath}</p>
+            <p><strong>Thumbnail Path:</strong> {results.thumbnailPath || "N/A"}</p>
             <p><strong>Transcript Path:</strong> {results.transcriptPath}</p>
             <p><strong>Keyframe Analysis Path:</strong> {results.keyframeAnalysisPath}</p>
             <p><strong>Temporal Analysis Path:</strong> {results.temporalAnalysisPath}</p>
             <p><strong>Claim Analysis Path:</strong> {results.claimAnalysisPath}</p>
+            <p><strong>Thumbnail Analysis Path:</strong> {results.thumbnailAnalysisPath}</p>
             <p><strong>Claim:</strong> {results.claim || "No clear factual claim detected"}</p>
             <p><strong>Claim Verdict:</strong> {results.claimVerdict || "unverified"}</p>
             <p><strong>Recommended Action:</strong> {results.recommendedAction || "needs_more_evidence"}</p>
@@ -349,6 +364,19 @@ export default function Home() {
             <p><strong>Depicted Event:</strong> {results.depictedEvent || "N/A"}</p>
             <p><strong>Visual Authenticity Risk:</strong> {typeof results.visualAuthenticityRisk === "number" ? `${Math.round(results.visualAuthenticityRisk * 100)}%` : "N/A"}</p>
             <p><strong>Visual Authenticity Signals:</strong> {(results.visualAuthenticitySignals || []).join(", ") || "None"}</p>
+            <p><strong>Thumbnail Clickbait Score:</strong> {typeof results.thumbnailClickbaitScore === "number" ? `${Math.round(results.thumbnailClickbaitScore * 100)}%` : "N/A"}</p>
+            <p><strong>Thumbnail Clickbait Risk:</strong> {results.thumbnailClickbaitRiskLevel || "N/A"}</p>
+            {results.thumbnailSummary && (
+              <p><strong>Thumbnail Summary:</strong> {results.thumbnailSummary}</p>
+            )}
+            {results.thumbnailClickbaitRationale && (
+              <p><strong>Thumbnail Clickbait Reason:</strong> {results.thumbnailClickbaitRationale}</p>
+            )}
+            <p><strong>Thumbnail Mismatches:</strong> {(results.thumbnailClickbaitMismatches || []).join(", ") || "None"}</p>
+            <p><strong>Thumbnail Supporting Signals:</strong> {(results.thumbnailClickbaitSupportingSignals || []).join(", ") || "None"}</p>
+            {results.thumbnailClickbaitError && (
+              <p><strong>Thumbnail Clickbait Error:</strong> {results.thumbnailClickbaitError}</p>
+            )}
             {results.visualAuthenticityRationale && (
               <p><strong>Visual Authenticity Reason:</strong> {results.visualAuthenticityRationale}</p>
             )}
