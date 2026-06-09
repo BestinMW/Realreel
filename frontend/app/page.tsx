@@ -21,6 +21,10 @@ type ProcessingResult = {
   misleadingProbabilityRationale?: string;
   visualAuthenticityRisk?: number | null;
   visualAuthenticityRationale?: string;
+  thumbnailClickbaitScore?: number | null;
+  thumbnailSummary?: string;
+  thumbnailClickbaitRationale?: string;
+  thumbnailClickbaitMismatches?: string[];
   recommendedAction?: string;
 };
 
@@ -144,9 +148,13 @@ function getReliabilityScore(result: ProcessingResult | null) {
     typeof result.visualAuthenticityRisk === "number"
       ? result.visualAuthenticityRisk
       : null;
-  const highestRisk = Math.max(misleadingRisk ?? 0, visualRisk ?? 0);
+  const thumbnailRisk =
+    typeof result.thumbnailClickbaitScore === "number"
+      ? result.thumbnailClickbaitScore
+      : null;
+  const highestRisk = Math.max(misleadingRisk ?? 0, visualRisk ?? 0, thumbnailRisk ?? 0);
 
-  if (misleadingRisk !== null || visualRisk !== null) {
+  if (misleadingRisk !== null || visualRisk !== null || thumbnailRisk !== null) {
     return Math.max(0, Math.min(100, Math.round((1 - highestRisk) * 100)));
   }
 
@@ -180,6 +188,18 @@ function getReliabilityExplanation(result: ProcessingResult | null) {
 
   if (result.visualAuthenticityRationale) {
     parts.push(`Visual authenticity: ${result.visualAuthenticityRationale}`);
+  }
+
+  if (result.thumbnailSummary) {
+    parts.push(`The thumbnail appears to show ${result.thumbnailSummary}.`);
+  }
+
+  if (result.thumbnailClickbaitRationale) {
+    parts.push(`Thumbnail fit: ${result.thumbnailClickbaitRationale}`);
+  }
+
+  if (result.thumbnailClickbaitMismatches?.length) {
+    parts.push(`Thumbnail mismatch: ${result.thumbnailClickbaitMismatches.join("; ")}.`);
   }
 
   if (result.misleadingProbabilityRationale) {

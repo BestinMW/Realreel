@@ -20,11 +20,14 @@ VISUAL_EVENT_WINDOW_RADIUS_FRAMES = int(
     os.environ.get("VISUAL_EVENT_WINDOW_RADIUS_FRAMES", "2")
 )
 TRANSCRIPTION_LEAD_IN_SECONDS = float(os.environ.get("TRANSCRIPTION_LEAD_IN_SECONDS", "1"))
+FAST_PROCESSING_MODE = os.environ.get("FAST_PROCESSING_MODE", "false").lower() == "true"
+UPLOAD_RAW_VIDEO = os.environ.get("UPLOAD_RAW_VIDEO", "false").lower() == "true"
 
 STORAGE_BUCKETS = {
     "rawVideos": os.environ.get("RAW_VIDEOS_BUCKET", "raw-videos"),
     "audio": os.environ.get("AUDIO_BUCKET", "audio"),
     "transcripts": os.environ.get("TRANSCRIPTS_BUCKET", "transcripts"),
+    "thumbnails": os.environ.get("THUMBNAILS_BUCKET", "thumbnails"),
     "analysis": os.environ.get("ANALYSIS_BUCKET")
     or os.environ.get("TRANSCRIPTS_BUCKET", "transcripts"),
 }

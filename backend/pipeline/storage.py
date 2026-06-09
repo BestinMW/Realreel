@@ -4,6 +4,26 @@ from pathlib import Path
 import httpx
 
 
+class SupabaseStorageUploadError(RuntimeError):
+    def __init__(self, *, storage_path: str, status_code: int, message: str) -> None:
+        self.storage_path = storage_path
+        self.status_code = status_code
+        self.message = message
+        super().__init__(
+            f"Failed to upload {storage_path} to Supabase Storage: {message}"
+        )
+
+    @property
+    def is_payload_too_large(self) -> bool:
+        lowered = self.message.lower()
+        return (
+            self.status_code == 413
+            or '"statuscode":"413"' in lowered.replace(" ", "")
+            or "payload too large" in lowered
+            or "maximum allowed size" in lowered
+        )
+
+
 def get_supabase_config() -> tuple[str, str]:
     supabase_url = os.environ.get("SUPABASE_URL", "").rstrip("/")
     service_role_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
@@ -41,8 +61,10 @@ def upload_to_supabase_storage(
         timeout=300.0,
     )
     if response.status_code >= 400:
-        raise RuntimeError(
-            f"Failed to upload {storage_path} to Supabase Storage: {response.text}"
+        raise SupabaseStorageUploadError(
+            storage_path=storage_path,
+            status_code=response.status_code,
+            message=response.text,
         )
     return storage_path
 

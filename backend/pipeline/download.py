@@ -49,6 +49,11 @@ def extract_video_info(url: str) -> dict[str, Any]:
 
 
 def download_video(video_url: str, job_dir: Path) -> Path:
+    video_path, _ = download_video_with_info(video_url, job_dir)
+    return video_path
+
+
+def download_video_with_info(video_url: str, job_dir: Path) -> tuple[Path, dict[str, Any]]:
     try:
         import yt_dlp
     except ImportError as exc:
@@ -70,13 +75,17 @@ def download_video(video_url: str, job_dir: Path) -> Path:
         "no_warnings": True,
     }
 
+    info: dict[str, Any] = {}
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([video_url.strip()])
+            extracted = ydl.extract_info(video_url.strip(), download=True)
+            sanitized = ydl.sanitize_info(extracted) if extracted else {}
+            if isinstance(sanitized, dict):
+                info = sanitized
     except Exception as exc:
         raise RuntimeError(f"yt-dlp download failed: {exc}") from exc
 
-    return find_downloaded_video(job_dir)
+    return find_downloaded_video(job_dir), info
 
 
 def download_youtube_video(youtube_url: str, job_dir: Path) -> Path:

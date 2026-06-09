@@ -19,6 +19,7 @@ Only include text that is visible in the image. If uncertain, include the best r
 Briefly describe the visible scene, objects, and actions, especially destructive events like explosions, fires, collapses, crashes, or smoke.
 For explosions, fires, smoke, debris, or collapsing structures, scrutinize whether the event obeys plausible physics across light, shadows, scale, blast direction, debris motion, reflections, smoke behavior, and object continuity.
 List observable AI/synthetic visual artifacts such as warped geometry, inconsistent lighting, impossible physics, texture smearing, object disappearance, malformed details, physically implausible explosions, uniform/smeared fire, impossible smoke, or debris that appears/disappears.
+Also assess clearly synthetic media even when it is entertainment rather than news: AI-generated music videos, CGI/animation, surreal generated-art scenes, over-smoothed textures, uncanny bodies/faces, dreamlike incoherent objects, artificial depth-of-field, impossible scene composition, and image-generator aesthetics. If the frame appears intentionally AI-generated/CGI/animated, set synthetic.aiLikelihood to medium or high and list the observable synthetic signals.
 Do NOT conclude the video is misleading or fake; only list observable signals."""
 
 GEMINI_RESPONSE_SCHEMA = {
@@ -157,7 +158,30 @@ SYNTHETIC_SIGNAL_VALUES = {
     "object_disappearance",
     "malformed_details",
     "cgi_artifacts",
+    "cgi_animation",
+    "generated_art_aesthetic",
+    "surreal_incoherent_scene",
+    "uncanny_body",
+    "over_smooth_textures",
+    "artificial_depth",
+    "impossible_scene_composition",
+    "ai_music_video_style",
     "none",
+}
+SYNTHETIC_SIGNAL_ALIASES = {
+    "ai generated": "generated_art_aesthetic",
+    "ai-generated": "generated_art_aesthetic",
+    "generated": "generated_art_aesthetic",
+    "generated art": "generated_art_aesthetic",
+    "cgi": "cgi_artifacts",
+    "computer generated": "cgi_artifacts",
+    "animation": "cgi_animation",
+    "animated": "cgi_animation",
+    "surreal": "surreal_incoherent_scene",
+    "dreamlike": "surreal_incoherent_scene",
+    "uncanny": "uncanny_body",
+    "over smoothed": "over_smooth_textures",
+    "oversmoothed": "over_smooth_textures",
 }
 DESTRUCTIVE_EVENT_TYPES = {
     "explosion",
@@ -269,9 +293,9 @@ def normalize_vision_indicators(parsed: Any) -> dict[str, Any]:
     synthetic = parsed.get("synthetic") if isinstance(parsed.get("synthetic"), dict) else {}
     raw_signals = synthetic.get("signals") if isinstance(synthetic.get("signals"), list) else []
     signals = [
-        signal
+        normalized
         for signal in raw_signals
-        if signal in SYNTHETIC_SIGNAL_VALUES and signal != "none"
+        if (normalized := _normalize_synthetic_signal(signal))
     ][:8]
 
     context_signals = [
@@ -362,6 +386,20 @@ def cross_modal_hints(ocr_indicators: dict, vision_indicators: dict) -> list[dic
         hints.append({"type": "synthetic_visual_signals", "confidence": "medium"})
 
     return hints
+
+
+def _normalize_synthetic_signal(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+
+    cleaned = value.strip().lower().replace("-", "_").replace(" ", "_")
+    if cleaned == "none":
+        return None
+    if cleaned in SYNTHETIC_SIGNAL_VALUES:
+        return cleaned
+
+    alias_key = value.strip().lower().replace("_", " ")
+    return SYNTHETIC_SIGNAL_ALIASES.get(alias_key)
 
 
 def format_ocr_summary(indicators: dict) -> str:
