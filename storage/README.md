@@ -1,171 +1,175 @@
-# RealReel Storage and Database Layer
+# RealReel Storage and Database
 
-This folder stores completed video analysis results and the file paths for
-assets saved in Supabase Storage. It does not track in-progress processing.
+Postgres schema, Supabase Storage conventions, and Python services for persisting **completed** video analyses. The backend analysis pipeline imports this package directly; a separate FastAPI router is available if you want a standalone storage API.
 
-## Simple Design
+In-progress jobs are not tracked here—only finished runs upsert into `public.videos`.
 
-RealReel currently uses one main database table:
+## What gets stored
 
-```text
-videos
-```
+Each analyzed video can produce:
 
-Each row represents one fully analyzed video. The row stores:
+1. **Files** in private Supabase Storage buckets (paths stored on the row)
+2. **One Postgres row** in `videos` with scores, metadata, and JSON `reasons`
 
-- the original submitted URL
-- basic platform/uploader metadata
-- Supabase Storage paths for the raw video, thumbnail, and transcript artifact
-- transcript text if available
-- one whole-video embedding for similarity search
-- final analysis scores
-- JSON reasons/explanations
-- timestamps
+The backend saves the row after uploads when `DATABASE_URL` is set (`ENABLE_DATABASE_SAVE=true` by default).
 
-Frame-by-frame embeddings, processing jobs, and separate analysis tables were
-removed because the database is only being used to retrieve previously analyzed
-videos.
+## `videos` table
 
-## Files
+Key columns:
+
+| Column | Meaning |
+|--------|---------|
+| `original_url` | Submitted URL (unique) |
+| `platform` | `youtube`, `tiktok`, `instagram`, etc. |
+| `uploader_handle`, `uploader_url` | Channel / author from yt-dlp |
+| `platform_upload_date` | Platform publish date (`date`, from yt-dlp `upload_date`) |
+| `file_sha256` | Exact file hash (unique) |
+| `raw_video_path`, `thumbnail_path`, `transcript_path` | Supabase Storage object paths |
+| `transcript_text` | Truncated transcript excerpt |
+| `video_embedding` | Optional whole-video vector (512-dim pgvector) |
+| `ai_generated_score` | Visual authenticity risk (0–1) |
+| `misleading_context_score` | Misleading probability (0–1) |
+| `repost_probability` | Repost risk (0–1) |
+| `overall_risk_score` | `max(misleading, visual, thumbnail, repost)` at save time |
+| `credibility_score` | `1 − overall_risk_score` |
+| `confidence` | Claim-analysis confidence |
+| `reasons` | JSONB detail (claim summary, analysis paths, repost assessment, etc.) |
+| `created_at`, `updated_at` | When RealReel saved/updated the row (not platform publish date) |
+
+Run `schema.sql` once in Supabase **SQL Editor**. If you already created the table earlier, run the migration comments at the bottom of `schema.sql` to add `platform_upload_date`.
+
+## Repost detection
+
+`storage/services/reposts.py` compares a new video against saved rows:
+
+1. **Exact hash** — same `file_sha256`, different URL
+2. **Embedding similarity** — when `video_embedding` exists on saved rows
+
+A match is flagged as a repost only when:
+
+- It is a different post (not the same URL; different author or publish date)
+- The current video's `platform_upload_date` is **later** than the matched row's
+
+Re-analyzing the same URL does not count as a repost. Rows without `platform_upload_date` cannot satisfy the date rule until re-analyzed (date comes from yt-dlp at pipeline time).
+
+The backend calls repost assessment during the pipeline; results appear in the stream result and in `reasons.repost` on save.
+
+## File layout
 
 ```text
 storage/
-  api/
-    routes.py          FastAPI routes for saving/finding analyzed videos
-  assets/
-    paths.py           Supabase Storage bucket names and object paths
-    supabase.py        Upload, signed URL, and delete helpers
-  core/
-    config.py          Environment variable settings
+  schema.sql                 Supabase SQL (table, indexes, buckets)
+  core/config.py             Pydantic settings from env
   db/
-    models.py          SQLAlchemy database model for the videos table
-    session.py         Async SQLAlchemy database connection/session
-  schemas/
-    contracts.py       Pydantic request/response shapes
+    models.py                SQLAlchemy `Video` model
+    session.py               Async engine (FastAPI / async callers)
+    sync_bridge.py           Background event loop for sync pipeline DB calls
   services/
-    videos.py          Database service helpers
-  vector/
-    search.py          Whole-video pgvector similarity search
-  schema.sql           SQL to paste into Supabase SQL Editor
-  requirements.txt     Python dependencies
-  env.example          Required environment variables
+    videos.py                Insert/update/query helpers
+    db_videos.py             Map pipeline result → `VideoCreate` → upsert
+    reposts.py               Repost rules and sync bridge entrypoint
+  vector/search.py           pgvector cosine similarity
+  assets/
+    paths.py                 Bucket names and path templates
+    supabase.py              Upload, signed URL, delete (optional Python client)
+  schemas/contracts.py       Pydantic `VideoCreate`, `VideoRead`, etc.
+  api/routes.py              Optional REST router (not mounted by default backend)
+  tests/
+    test_pipeline_units.py   Schema/path validation unit tests
+    test_storage_reposts.py  Repost scoring unit tests
+    smoke_test.py            Live DB integration script
+  requirements.txt
+  requirements-assets.txt  Optional Supabase Python client deps
 ```
 
-## Supabase Setup
+## Supabase setup
 
-Install Python dependencies:
+1. Create a Supabase project.
+2. Paste and run `storage/schema.sql` in SQL Editor.
+3. Copy connection string and keys into `storage/.env` (and/or `backend/.env.local`).
 
-```bash
-pip install -r storage/requirements.txt
-```
-
-The optional Python Supabase asset helper needs the Supabase client package:
-
-```bash
-pip install -r storage/requirements-assets.txt
-```
-
-The current Next.js YouTube route uploads assets to Supabase Storage directly
-from Node, so the database smoke test only needs `storage/requirements.txt`.
-
-The current Next.js YouTube route uploads assets to Supabase Storage directly
-from Node and uses OpenAI's hosted transcription API for the extracted WAV file.
-
-Then open Supabase Dashboard > SQL Editor, paste `storage/schema.sql`, and run
-it once.
-
-That script creates:
-
-- `pgvector`
-- `pgcrypto`
-- `video_platform` enum
-- `videos` table
-- indexes for lookup and vector search
-- private Supabase Storage buckets
-
-## Testing
-
-Run the local unit tests without connecting to Supabase:
-
-```bash
-python -m unittest storage.tests.test_pipeline_units
-```
-
-After setting your environment variables and running `storage/schema.sql` in
-Supabase, run the smoke test:
-
-```bash
-python storage/tests/smoke_test.py
-```
-
-The smoke test creates a fake completed video row, retrieves it by URL and file
-hash, runs a pgvector similarity query, then deletes the test row.
-
-## Environment Variables
-
-Use `storage/env.example` as the template:
-
-```text
-DATABASE_URL=postgresql+asyncpg://...
+```env
+DATABASE_URL=postgresql+asyncpg://postgres.[ref]:[password]@....pooler.supabase.com:5432/postgres
 SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+SUPABASE_SERVICE_ROLE_KEY=...
 EMBEDDING_DIMENSION=512
 SIGNED_URL_TTL_SECONDS=900
 RAW_VIDEOS_BUCKET=raw-videos
 AUDIO_BUCKET=audio
 TRANSCRIPTS_BUCKET=transcripts
 THUMBNAILS_BUCKET=thumbnails
+ANALYSIS_BUCKET=analysis
 ```
 
-Only the backend should use `SUPABASE_SERVICE_ROLE_KEY`. Never expose it in the
-frontend.
+Only the backend should use `SUPABASE_SERVICE_ROLE_KEY`. Never expose it in the frontend.
 
-## Storage Buckets
+Install Python deps (for smoke test or standalone API):
 
-The simplified setup uses private buckets:
+```bash
+pip install -r storage/requirements.txt
+```
 
-- `raw-videos`: downloaded source video files
-- `audio`: extracted WAV audio files
-- `transcripts`: JSON/text transcript artifacts
-- `thumbnails`: preview images
+For `storage/assets/supabase.py` helpers:
 
-The database stores only the path, not the actual file.
+```bash
+pip install -r storage/requirements-assets.txt
+```
+
+## Storage buckets
+
+Private buckets (created by `schema.sql` or auto-created by the backend on first upload):
+
+| Bucket | Typical content |
+|--------|-----------------|
+| `raw-videos` | Source MP4 (optional; skipped unless `UPLOAD_RAW_VIDEO=true`) |
+| `audio` | Extracted WAV |
+| `transcripts` | Transcript JSON |
+| `thumbnails` | Preview JPEG |
+| `analysis` | Claim, temporal, metadata, repost JSON artifacts |
+
+Object paths are stored on the `videos` row; files live in Supabase Storage.
 
 Example:
 
 ```text
-bucket: raw-videos
-path: videos/{video_id}/raw/original.mp4
+bucket: analysis
+path: videos/youtube/{job_id}/analysis/claim-analysis.json
 ```
 
-In the `videos` table:
+## How the backend uses this package
 
-```text
-raw_video_path = videos/{video_id}/raw/original.mp4
+`backend/main.py` adds the repo root to `sys.path` and loads `storage/.env` as a fallback.
+
+During `process_youtube_video`:
+
+- **Repost** — `run_repost_assessment_sync()` via `sync_bridge` (needs `DATABASE_URL`)
+- **Save** — `persist_db_video_sync()` builds a `VideoCreate` payload including `platform_upload_date` from yt-dlp metadata
+
+No separate storage server is required for the default app.
+
+## Testing
+
+Unit tests (no live database):
+
+```bash
+python scripts/run_tests.py
 ```
 
-The backend can generate a short-lived signed URL when the frontend needs to
-view a private asset.
+Storage-specific tests only:
 
+```bash
+python -m unittest discover storage/tests -t .
+```
 
-## Similarity Search
+Live integration (creates and deletes one test row; requires valid `DATABASE_URL`):
 
-The `videos.video_embedding` column stores one whole-video embedding. The helper
-in `storage/vector/search.py` compares a new embedding against previously saved
-videos using pgvector cosine distance.
+```bash
+python storage/tests/smoke_test.py
+```
 
-This supports:
+## Optional FastAPI router
 
-- finding similar previously analyzed videos
-- avoiding repeated analysis for near-duplicates
-- basic repost detection without frame-by-frame storage
-
-If RealReel later needs partial-clip detection, then adding a separate table for
-frame-level embeddings would make sense. For now, that complexity is removed.
-
-## FastAPI Routes
-
-Mount the router:
+Mount when running a dedicated storage service:
 
 ```python
 from fastapi import FastAPI
@@ -175,22 +179,35 @@ app = FastAPI()
 app.include_router(storage_router)
 ```
 
-Included endpoints:
+Endpoints include:
 
-- `POST /storage/videos`: save a completed analysis
-- `GET /storage/videos`: list recent analyzed videos
-- `GET /storage/videos/by-url`: find by original URL
-- `GET /storage/videos/by-sha256`: find by file hash
-- `GET /storage/videos/{video_id}`: get one saved analysis
-- `POST /storage/videos/similar`: find similar saved videos by embedding
-- `POST /storage/assets/signed-url`: create a signed URL for a private file
-- `DELETE /storage/videos/{video_id}`: delete DB row and storage assets
+- `POST /storage/videos` — save completed analysis (runs repost assessment on save)
+- `GET /storage/videos` — list recent rows
+- `GET /storage/videos/by-url` — lookup by `original_url`
+- `GET /storage/videos/by-sha256` — lookup by hash
+- `GET /storage/videos/{video_id}` — get one row
+- `POST /storage/videos/similar` — pgvector similarity search
+- `POST /storage/assets/signed-url` — short-lived private file URL
+- `DELETE /storage/videos/{video_id}` — delete row and storage prefixes
 
-## Why pgvector
+## pgvector
 
-pgvector lets Supabase Postgres store and search embeddings directly in the same
-database as the saved video analysis rows. That keeps the architecture simple.
+`videos.video_embedding` uses `vector(512)` with an HNSW index. Similarity search lives in `vector/search.py` and powers embedding-based repost candidates when embeddings are populated.
 
-FAISS or a dedicated vector database may be useful later, but they add another
-system to deploy, sync, back up, and debug. For this stage, pgvector is the right
-fit.
+## Inspecting data in Supabase
+
+**Table Editor** → `public.videos`, or SQL:
+
+```sql
+select
+  original_url,
+  uploader_handle,
+  platform_upload_date,
+  overall_risk_score,
+  created_at
+from public.videos
+order by created_at desc
+limit 20;
+```
+
+`created_at` is when RealReel saved the analysis. Use `platform_upload_date` for when the video was posted on the platform.

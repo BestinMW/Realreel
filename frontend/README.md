@@ -37,11 +37,7 @@ npm run dev
 
 Open http://localhost:3000
 
-## Vercel + Railway
-
-- Deploy this app to **Vercel** with `PROCESSOR_URL=https://your-service.up.railway.app`
-- Deploy `backend/` to **Railway** with env from `backend/.env.example`
-- Set `CORS_ORIGINS` on Railway to your Vercel URL
+Shortcut from repo root: `.\scripts\start-frontend.ps1` (with the backend already running).
 
 ## API proxy
 
