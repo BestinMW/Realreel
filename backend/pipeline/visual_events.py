@@ -20,6 +20,10 @@ from .vision import (
 )
 
 
+def _timestamp_for_index(index: int, sample_rate: float) -> float:
+    return round(index / max(sample_rate, 0.001), 3)
+
+
 def analyze_visual_events(
     *,
     frame_paths: list[Path],
@@ -29,54 +33,17 @@ def analyze_visual_events(
 ) -> dict[str, Any]:
     sample_rate = frame_sample_rate if frame_sample_rate is not None else FRAME_SAMPLE_RATE
 
-    def timestamp_for_index(index: int) -> float:
-        return round(index / max(sample_rate, 0.001), 3)
-
     selected_frames = _select_event_frames(
         frame_paths=frame_paths,
         temporal_analysis=temporal_analysis,
         limit=MAX_VISUAL_EVENT_FRAMES_TO_ANALYZE,
         window_radius=VISUAL_EVENT_WINDOW_RADIUS_FRAMES,
     )
-<<<<<<< HEAD
+    for selected_frame in selected_frames:
+        selected_frame["sample_rate"] = sample_rate
     max_workers = max(1, min(MAX_FRAME_ANALYSIS_WORKERS, len(selected_frames) or 1))
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         frames = list(executor.map(_analyze_selected_event_frame, selected_frames))
-=======
-    frames = []
-
-    for selected_frame in selected_frames:
-        frame_path = selected_frame["path"]
-        frame_index = selected_frame["index"]
-        timestamp_seconds = timestamp_for_index(frame_index)
-        vision = analyze_frame_with_gemini(
-            frame_path,
-            ocr_summary=(
-                "sampled frame event-window scan; OCR not run for this frame; "
-                f"selectionReason={selected_frame['reason']}; "
-                f"windowCenter={selected_frame.get('windowCenterFrame') or 'none'}"
-            ),
-        )
-        authenticity = analyze_frame_authenticity(frame_path)
-        indicators = vision.get("indicators") or {}
-        frames.append(
-            {
-                "frame": frame_path.name,
-                "timestamp": seconds_to_timestamp(timestamp_seconds),
-                "timestampSeconds": timestamp_seconds,
-                "selectionReason": selected_frame["reason"],
-                "windowCenterFrame": selected_frame.get("windowCenterFrame"),
-                "windowOffsetFrames": selected_frame.get("windowOffsetFrames"),
-                "sourceComparison": selected_frame.get("sourceComparison"),
-                "vision": {
-                    "ok": vision.get("ok"),
-                    "indicators": indicators,
-                    "error": vision.get("error"),
-                },
-                "authenticity": authenticity,
-            }
-        )
->>>>>>> 4d7d4f97aa1e14ef84fdaf50f2b7f47a076565cc
 
     event_window_consistency = analyze_event_window_consistency(frames)
     result = {
@@ -102,7 +69,8 @@ def analyze_visual_events(
 def _analyze_selected_event_frame(selected_frame: dict[str, Any]) -> dict[str, Any]:
     frame_path = selected_frame["path"]
     frame_index = selected_frame["index"]
-    timestamp_seconds = _timestamp_for_index(frame_index)
+    sample_rate = selected_frame.get("sample_rate", FRAME_SAMPLE_RATE)
+    timestamp_seconds = _timestamp_for_index(frame_index, sample_rate)
     vision = analyze_frame_with_gemini(
         frame_path,
         ocr_summary=(

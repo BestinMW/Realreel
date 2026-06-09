@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -25,6 +25,7 @@ class VideoCreate(BaseModel):
     transcript_text: str | None = None
 
     duration_seconds: Decimal | None = None
+    platform_upload_date: date | None = None
     file_sha256: str | None = None
     video_embedding: list[float] | None = None
     embedding_model: str | None = None
@@ -52,6 +53,7 @@ class VideoRead(BaseModel):
     transcript_path: str | None
     transcript_text: str | None
     duration_seconds: Decimal | None
+    platform_upload_date: date | None
     file_sha256: str | None
     video_embedding: list[float] | None
     embedding_model: str | None

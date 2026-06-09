@@ -31,6 +31,7 @@ create table if not exists public.videos (
   transcript_path text,
   transcript_text text,
   duration_seconds numeric(10, 3),
+  platform_upload_date date,
   file_sha256 varchar(64) unique,
   video_embedding vector(512),
   embedding_model varchar(128),
@@ -49,6 +50,10 @@ create table if not exists public.videos (
   overall_risk_score numeric(5, 4) not null check (
     overall_risk_score >= 0 and overall_risk_score <= 1
   ),
+  -- overall_risk_score = max(misleading, visual, thumbnail, repost)
+  -- ai_generated_score stores visual authenticity risk
+  -- misleading_context_score stores misleading probability
+  -- credibility_score stores 1 - overall_risk_score
   confidence numeric(5, 4) not null check (
     confidence >= 0 and confidence <= 1
   ),
@@ -63,6 +68,8 @@ create index if not exists ix_videos_file_sha256
   on public.videos (file_sha256);
 create index if not exists ix_videos_created_at
   on public.videos (created_at);
+create index if not exists ix_videos_platform_upload_date
+  on public.videos (platform_upload_date);
 create index if not exists ix_videos_video_embedding_hnsw
   on public.videos using hnsw (video_embedding vector_cosine_ops);
 
@@ -89,5 +96,6 @@ values
   ('raw-videos', 'raw-videos', false),
   ('audio', 'audio', false),
   ('transcripts', 'transcripts', false),
-  ('thumbnails', 'thumbnails', false)
+  ('thumbnails', 'thumbnails', false),
+  ('analysis', 'analysis', false)
 on conflict (id) do update set public = excluded.public;

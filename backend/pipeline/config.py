@@ -26,6 +26,11 @@ MAX_FRAME_ANALYSIS_WORKERS = int(os.environ.get("MAX_FRAME_ANALYSIS_WORKERS", "4
 TRANSCRIPTION_LEAD_IN_SECONDS = float(os.environ.get("TRANSCRIPTION_LEAD_IN_SECONDS", "1"))
 FAST_PROCESSING_MODE = os.environ.get("FAST_PROCESSING_MODE", "false").lower() == "true"
 UPLOAD_RAW_VIDEO = os.environ.get("UPLOAD_RAW_VIDEO", "false").lower() == "true"
+ENABLE_REPOST_ASSESSMENT = os.environ.get("ENABLE_REPOST_ASSESSMENT", "true").lower() != "false"
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+REPOST_ASSESSMENT_ENABLED = ENABLE_REPOST_ASSESSMENT and bool(DATABASE_URL)
+ENABLE_DATABASE_SAVE = os.environ.get("ENABLE_DATABASE_SAVE", "true").lower() != "false"
+DATABASE_SAVE_ENABLED = ENABLE_DATABASE_SAVE and bool(DATABASE_URL)
 
 STORAGE_BUCKETS = {
     "rawVideos": os.environ.get("RAW_VIDEOS_BUCKET", "raw-videos"),
@@ -33,7 +38,8 @@ STORAGE_BUCKETS = {
     "transcripts": os.environ.get("TRANSCRIPTS_BUCKET", "transcripts"),
     "thumbnails": os.environ.get("THUMBNAILS_BUCKET", "thumbnails"),
     "analysis": os.environ.get("ANALYSIS_BUCKET")
-    or os.environ.get("TRANSCRIPTS_BUCKET", "transcripts"),
+    or os.environ.get("TRANSCRIPTS_BUCKET")
+    or "transcripts",
 }
 
 OPENAI_TRANSCRIPTION_MODEL = os.environ.get("OPENAI_TRANSCRIPTION_MODEL", "whisper-1")

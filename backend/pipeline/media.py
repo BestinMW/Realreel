@@ -1,3 +1,4 @@
+import hashlib
 import re
 import subprocess
 from pathlib import Path
@@ -13,6 +14,14 @@ from .config import (
     TRANSCRIPTION_LEAD_IN_SECONDS,
 )
 from .tools import get_ffmpeg_command
+
+
+def compute_file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as file_handle:
+        for chunk in iter(lambda: file_handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def run_ffmpeg(args: list[str], capture_stderr: bool = False) -> str:

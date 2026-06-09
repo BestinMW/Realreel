@@ -8,3 +8,7 @@ pytesseract>=0.3.10
 Pillow>=10.0.0
 yt-dlp>=2024.1.0
 imageio-ffmpeg>=0.5.0
+sqlalchemy[asyncio]>=2.0.0
+asyncpg>=0.29.0
+pgvector>=0.3.0
+pydantic-settings>=2.0.0

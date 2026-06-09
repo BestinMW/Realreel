@@ -34,6 +34,51 @@ def get_supabase_config() -> tuple[str, str]:
     return supabase_url, service_role_key
 
 
+_ensured_bucket_names: set[str] = set()
+
+
+def ensure_storage_buckets(bucket_names: set[str]) -> None:
+    """Create required private Supabase buckets if they do not exist."""
+    missing = bucket_names - _ensured_bucket_names
+    if not missing:
+        return
+
+    supabase_url, service_role_key = get_supabase_config()
+    headers = {
+        "apikey": service_role_key,
+        "Authorization": f"Bearer {service_role_key}",
+        "Content-Type": "application/json",
+    }
+    list_response = httpx.get(
+        f"{supabase_url}/storage/v1/bucket",
+        headers=headers,
+        timeout=30.0,
+    )
+    if list_response.status_code >= 400:
+        raise RuntimeError(
+            f"Failed to list Supabase Storage buckets: {list_response.text}"
+        )
+
+    existing = {bucket["name"] for bucket in list_response.json()}
+    for bucket_name in sorted(missing):
+        if bucket_name in existing:
+            _ensured_bucket_names.add(bucket_name)
+            continue
+
+        create_response = httpx.post(
+            f"{supabase_url}/storage/v1/bucket",
+            headers=headers,
+            json={"name": bucket_name, "public": False},
+            timeout=30.0,
+        )
+        if create_response.status_code >= 400:
+            raise RuntimeError(
+                f"Failed to create Supabase Storage bucket '{bucket_name}': "
+                f"{create_response.text}"
+            )
+        _ensured_bucket_names.add(bucket_name)
+
+
 def upload_to_supabase_storage(
     *,
     bucket: str,

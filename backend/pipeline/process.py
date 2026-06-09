@@ -12,6 +12,8 @@ from .config import (
     KEYFRAME_INTERVAL_SECONDS,
     KEYFRAME_SCENE_THRESHOLD,
     MAX_KEYFRAMES_TO_ANALYZE,
+    REPOST_ASSESSMENT_ENABLED,
+    DATABASE_SAVE_ENABLED,
     STORAGE_BUCKETS,
     TRANSCRIPTION_LEAD_IN_SECONDS,
     UPLOAD_RAW_VIDEO,
@@ -21,13 +23,18 @@ from .claim_analysis import analyze_claim
 from .download import download_video_with_info
 from .keyframes import analyze_keyframes_stream
 from .media import (
+    compute_file_sha256,
     create_audio_with_lead_in,
     extract_audio,
     extract_keyframes,
     extract_sampled_frames,
     list_image_files,
 )
-from .storage import SupabaseStorageUploadError, upload_to_supabase_storage
+from .storage import (
+    SupabaseStorageUploadError,
+    ensure_storage_buckets,
+    upload_to_supabase_storage,
+)
 from .temporal import analyze_temporal_consistency
 from .thumbnail import (
     analyze_thumbnail_clickbait,
@@ -42,6 +49,95 @@ from .youtube import parse_video_url, safe_segment
 
 
 UPLOAD_WORKERS = 6
+
+
+def _assess_repost_history(
+    file_sha256: str,
+    *,
+    original_url: str,
+    download_info: dict,
+) -> tuple[dict, str | None, dict, float | None]:
+    if not REPOST_ASSESSMENT_ENABLED:
+        skipped = {
+            "isRepost": False,
+            "repostProbability": None,
+            "matches": [],
+            "rationale": "Repost assessment disabled or DATABASE_URL is not configured.",
+            "skipped": True,
+            "skipReason": "Repost assessment disabled or DATABASE_URL is not configured.",
+        }
+        return skipped, None, skipped, None
+
+    from storage.services.reposts import (
+        extract_repost_match_date,
+        json_safe_assessment,
+        repost_risk_score,
+        run_repost_assessment_sync,
+    )
+
+    assessment = run_repost_assessment_sync(
+        file_sha256=file_sha256,
+        embedding=None,
+        original_url=original_url,
+        uploader_handle=download_info.get("uploader_id") or download_info.get("channel"),
+        upload_date=download_info.get("upload_date"),
+    )
+    result = json_safe_assessment(assessment)
+    return (
+        assessment,
+        extract_repost_match_date(assessment),
+        result,
+        repost_risk_score(assessment),
+    )
+
+
+def _persist_analysis_record(
+    *,
+    original_url: str,
+    platform: str,
+    file_sha256: str,
+    download_info: dict,
+    transcript: dict,
+    raw_video_storage_path: str | None,
+    thumbnail_storage_path: str | None,
+    transcript_storage_path: str,
+    claim_analysis: dict,
+    thumbnail_clickbait_analysis: dict,
+    metadata_analysis: dict,
+    repost_result: dict,
+    repost_risk: float | None,
+    analysis_paths: dict[str, str | None],
+) -> dict:
+    if not DATABASE_SAVE_ENABLED:
+        return {
+            "ok": False,
+            "videoId": None,
+            "error": "Database save disabled or DATABASE_URL is not configured.",
+            "skipped": True,
+        }
+
+    from storage.services.db_videos import (
+        build_db_video_payload,
+        persist_db_video_sync,
+    )
+
+    payload = build_db_video_payload(
+        original_url=original_url,
+        platform=platform,
+        file_sha256=file_sha256,
+        download_info=download_info,
+        transcript_text=transcript.get("text"),
+        raw_video_path=raw_video_storage_path,
+        thumbnail_path=thumbnail_storage_path,
+        transcript_path=transcript_storage_path,
+        claim_analysis=claim_analysis,
+        thumbnail_clickbait_analysis=thumbnail_clickbait_analysis,
+        metadata_analysis=metadata_analysis,
+        repost_result=repost_result,
+        repost_risk=repost_risk,
+        analysis_paths=analysis_paths,
+    )
+    return persist_db_video_sync(payload)
 
 
 def select_keyframes_for_analysis(
@@ -114,6 +210,7 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
         metadata_analysis_path = job_dir / "metadata-analysis.json"
         thumbnail_path = job_dir / "thumbnail.jpg"
         thumbnail_analysis_path = job_dir / "thumbnail-clickbait-analysis.json"
+        repost_analysis_path = job_dir / "repost-analysis.json"
         frames_dir = job_dir / "frames"
         keyframes_dir = job_dir / "keyframes"
         frames_dir.mkdir(parents=True, exist_ok=True)
@@ -127,6 +224,7 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
         yield send({"type": "progress", "progress": 18, "stage": stage})
 
         video_path, download_info = download_video_with_info(original_url, job_dir)
+        file_sha256 = compute_file_sha256(video_path)
         thumbnail_url = get_thumbnail_url_from_info(download_info)
 
         stage = "Extracting audio"
@@ -217,6 +315,7 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
         thumbnail_analysis_storage_path = (
             f"{storage_prefix}/analysis/thumbnail-clickbait-analysis.json"
         )
+        repost_analysis_storage_path = f"{storage_prefix}/analysis/repost-analysis.json"
 
         yield send({"type": "progress", "progress": 62, "stage": "Transcribing audio"})
         transcript = transcribe_audio_with_openai(transcription_audio_path)
@@ -255,6 +354,20 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
         if keyframe_analysis is None:
             raise RuntimeError("Keyframe analysis did not complete.")
 
+        yield send({"type": "progress", "progress": 78, "stage": "Checking repost history"})
+        repost_assessment, repost_match_date, repost_result, repost_risk = (
+            _assess_repost_history(
+                file_sha256,
+                original_url=original_url,
+                download_info=download_info,
+            )
+        )
+
+        repost_analysis_path.write_text(
+            json.dumps(repost_result, indent=2),
+            encoding="utf-8",
+        )
+
         yield send({"type": "progress", "progress": 79, "stage": "Analyzing metadata"})
         if FAST_PROCESSING_MODE:
             metadata_analysis = {
@@ -268,6 +381,7 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
         else:
             metadata_analysis = MetadataAnalyzer(original_url, video_path).analyze(
                 transcript_text=transcript.get("text"),
+                repost_match_date=repost_match_date,
             )
         metadata_analysis["source"] = {
             "url": original_url,
@@ -363,6 +477,7 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
 
         stage = "Uploading analysis artifacts"
         yield send({"type": "progress", "progress": 90, "stage": stage})
+        ensure_storage_buckets(set(STORAGE_BUCKETS.values()))
         upload_tasks = [
             {
                 "name": "audio",
@@ -420,6 +535,13 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
                 "local_path": thumbnail_analysis_path,
                 "content_type": "application/json",
             },
+            {
+                "name": "repost analysis",
+                "bucket": STORAGE_BUCKETS["analysis"],
+                "storage_path": repost_analysis_storage_path,
+                "local_path": repost_analysis_path,
+                "content_type": "application/json",
+            },
         ]
         if local_thumbnail_path is not None:
             upload_tasks.append(
@@ -455,6 +577,40 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
                     }
                 )
 
+        yield send({"type": "progress", "progress": 97, "stage": "Saving analysis record"})
+        database_save = _persist_analysis_record(
+            original_url=original_url,
+            platform=platform,
+            file_sha256=file_sha256,
+            download_info=download_info,
+            transcript=transcript,
+            raw_video_storage_path=raw_video_storage_path,
+            thumbnail_storage_path=thumbnail_storage_path
+            if local_thumbnail_path is not None
+            else None,
+            transcript_storage_path=transcript_storage_path,
+            claim_analysis=claim_analysis,
+            thumbnail_clickbait_analysis=thumbnail_clickbait_analysis,
+            metadata_analysis=metadata_analysis,
+            repost_result=repost_result,
+            repost_risk=repost_risk,
+            analysis_paths={
+                "rawVideo": raw_video_storage_path,
+                "audio": audio_storage_path,
+                "thumbnail": thumbnail_storage_path
+                if local_thumbnail_path is not None
+                else None,
+                "transcript": transcript_storage_path,
+                "keyframeAnalysis": keyframe_analysis_storage_path,
+                "temporalAnalysis": temporal_analysis_storage_path,
+                "visualEventAnalysis": visual_event_analysis_storage_path,
+                "claimAnalysis": claim_analysis_storage_path,
+                "metadataAnalysis": metadata_analysis_storage_path,
+                "thumbnailAnalysis": thumbnail_analysis_storage_path,
+                "repostAnalysis": repost_analysis_storage_path,
+            },
+        )
+
         yield send({"type": "progress", "progress": 98, "stage": "Cleaning temporary files"})
         shutil.rmtree(job_dir, ignore_errors=True)
         job_dir = None
@@ -481,6 +637,18 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
                     "claimAnalysisPath": claim_analysis_storage_path,
                     "metadataAnalysisPath": metadata_analysis_storage_path,
                     "thumbnailAnalysisPath": thumbnail_analysis_storage_path,
+                    "repostAnalysisPath": repost_analysis_storage_path,
+                    "fileSha256": file_sha256,
+                    "isRepost": repost_result.get("isRepost"),
+                    "repostProbability": repost_result.get("repostProbability"),
+                    "repostRisk": repost_risk,
+                    "repostRationale": repost_result.get("rationale"),
+                    "repostMatches": repost_result.get("matches", []),
+                    "repostAssessmentSkipped": repost_result.get("skipped", False),
+                    "databaseSaveOk": database_save.get("ok"),
+                    "databaseVideoId": database_save.get("videoId"),
+                    "databaseSaveError": database_save.get("error"),
+                    "databaseSaveSkipped": database_save.get("skipped", False),
                     "metadataScore": metadata_analysis.get("metadata_score"),
                     "metadataReasons": metadata_analysis.get("reasons", []),
                     "metadataRuleResults": metadata_analysis.get("rule_results", {}),

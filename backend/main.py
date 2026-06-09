@@ -1,6 +1,7 @@
 import json
 import os
 import asyncio
+import sys
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
@@ -11,8 +12,12 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 _backend_dir = Path(__file__).resolve().parent
+_repo_root = _backend_dir.parent
+if str(_repo_root) not in sys.path:
+    sys.path.insert(0, str(_repo_root))
 load_dotenv(_backend_dir / ".env")
 load_dotenv(_backend_dir / ".env.local", override=True)
+load_dotenv(_repo_root / "storage" / ".env", override=False)
 
 from pipeline.config import CORS_ORIGINS
 from pipeline.process import process_youtube_video

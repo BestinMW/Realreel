@@ -26,7 +26,9 @@ sqlalchemy_asyncio_module.AsyncSession = object
 storage_module = types.ModuleType("storage")
 storage_module.__path__ = []
 storage_db_module = types.ModuleType("storage.db")
+storage_db_module.__path__ = []
 storage_models_module = types.ModuleType("storage.db.models")
+storage_sync_bridge_module = types.ModuleType("storage.db.sync_bridge")
 storage_vector_module = types.ModuleType("storage.vector")
 
 
@@ -43,6 +45,7 @@ async def fake_find_similar_videos(*args, **kwargs):
 
 
 storage_vector_module.find_similar_videos = fake_find_similar_videos
+storage_sync_bridge_module.run_db_coroutine = lambda coro: None
 
 sys.modules.setdefault("sqlalchemy", sqlalchemy_module)
 sys.modules.setdefault("sqlalchemy.ext", sqlalchemy_ext_module)
@@ -50,6 +53,7 @@ sys.modules.setdefault("sqlalchemy.ext.asyncio", sqlalchemy_asyncio_module)
 sys.modules.setdefault("storage", storage_module)
 sys.modules.setdefault("storage.db", storage_db_module)
 sys.modules.setdefault("storage.db.models", storage_models_module)
+sys.modules.setdefault("storage.db.sync_bridge", storage_sync_bridge_module)
 sys.modules.setdefault("storage.vector", storage_vector_module)
 
 spec = importlib.util.spec_from_file_location(
@@ -58,7 +62,72 @@ spec = importlib.util.spec_from_file_location(
 )
 assert spec is not None and spec.loader is not None
 reposts = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = reposts
 spec.loader.exec_module(reposts)
+
+
+class RepostContextTests(unittest.TestCase):
+    def test_parse_platform_upload_date_accepts_yyyymmdd(self) -> None:
+        self.assertEqual(
+            reposts.parse_platform_upload_date("20230615"),
+            datetime(2023, 6, 15).date(),
+        )
+
+    def test_same_url_is_not_a_different_post(self) -> None:
+        current = reposts.VideoPostContext(
+            original_url="https://youtube.com/watch?v=abc",
+            uploader_handle="channel-a",
+            upload_date=datetime(2024, 1, 10).date(),
+        )
+        matched = reposts.VideoPostContext(
+            original_url="https://youtube.com/watch?v=abc/",
+            uploader_handle="channel-a",
+            upload_date=datetime(2023, 1, 1).date(),
+        )
+        self.assertFalse(reposts._is_different_post(current, matched))
+
+    def test_later_post_from_different_author_is_flagged(self) -> None:
+        current = reposts.VideoPostContext(
+            original_url="https://youtube.com/watch?v=new",
+            uploader_handle="channel-b",
+            upload_date=datetime(2024, 6, 1).date(),
+        )
+        matched = reposts.VideoPostContext(
+            original_url="https://youtube.com/watch?v=old",
+            uploader_handle="channel-a",
+            upload_date=datetime(2023, 1, 1).date(),
+        )
+        should_flag, _ = reposts._should_flag_repost(current, matched)
+        self.assertTrue(should_flag)
+
+    def test_earlier_post_is_not_flagged(self) -> None:
+        current = reposts.VideoPostContext(
+            original_url="https://youtube.com/watch?v=new",
+            uploader_handle="channel-b",
+            upload_date=datetime(2022, 1, 1).date(),
+        )
+        matched = reposts.VideoPostContext(
+            original_url="https://youtube.com/watch?v=old",
+            uploader_handle="channel-a",
+            upload_date=datetime(2023, 1, 1).date(),
+        )
+        should_flag, rationale = reposts._should_flag_repost(current, matched)
+        self.assertFalse(should_flag)
+        self.assertIn("not later", rationale)
+
+    def test_same_author_and_same_upload_date_is_not_flagged(self) -> None:
+        current = reposts.VideoPostContext(
+            original_url="https://youtube.com/watch?v=new",
+            uploader_handle="channel-a",
+            upload_date=datetime(2024, 1, 1).date(),
+        )
+        matched = reposts.VideoPostContext(
+            original_url="https://youtube.com/watch?v=old",
+            uploader_handle="@channel-a",
+            upload_date=datetime(2024, 1, 1).date(),
+        )
+        should_flag, _ = reposts._should_flag_repost(current, matched)
+        self.assertFalse(should_flag)
 
 
 class RepostScoringTests(unittest.TestCase):
@@ -77,6 +146,8 @@ class RepostScoringTests(unittest.TestCase):
                 "platform": "direct",
                 "title": "Original clip",
                 "thumbnail_path": "videos/source/thumb.jpg",
+                "uploader_handle": "source-channel",
+                "platform_upload_date": datetime(2024, 1, 2).date(),
                 "created_at": created_at,
                 "overall_risk_score": Decimal("0.42"),
                 "similarity": Decimal("0.91"),
@@ -84,6 +155,8 @@ class RepostScoringTests(unittest.TestCase):
             }
         )
 
+        self.assertEqual(serialized["uploaderHandle"], "source-channel")
+        self.assertEqual(serialized["platformUploadDate"], "2024-01-02")
         self.assertEqual(serialized["createdAt"], "2026-06-08T12:30:00+00:00")
         self.assertEqual(serialized["overallRiskScore"], 0.42)
         self.assertEqual(serialized["similarity"], 0.91)

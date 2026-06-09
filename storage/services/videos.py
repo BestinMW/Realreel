@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import uuid
 
 from sqlalchemy import select
@@ -15,11 +17,7 @@ from storage.services.reposts import (
 
 
 async def save_analyzed_video(session: AsyncSession, payload: VideoCreate) -> Video:
-    """Store one completed analysis result.
-
-    The worker should call this only after downloading/analyzing the video has
-    succeeded. In-progress state should live in the queue system.
-    """
+    """Store one completed analysis result and run repost detection on save."""
     data = payload.model_dump(mode="python")
     data["original_url"] = str(payload.original_url)
     repost_assessment = await assess_repost_risk(
@@ -28,6 +26,24 @@ async def save_analyzed_video(session: AsyncSession, payload: VideoCreate) -> Vi
         file_sha256=payload.file_sha256,
     )
     data = apply_repost_assessment_to_payload(data, repost_assessment)
+    return await _insert_or_update_video(session, data)
+
+
+async def persist_analyzed_video(session: AsyncSession, payload: VideoCreate) -> Video:
+    """Store a pipeline result without re-running repost detection."""
+    data = payload.model_dump(mode="python")
+    data["original_url"] = str(payload.original_url)
+    return await _insert_or_update_video(session, data)
+
+
+async def _insert_or_update_video(session: AsyncSession, data: dict[str, Any]) -> Video:
+    existing = await find_video_by_url(session, data["original_url"])
+    if existing is not None:
+        for key, value in data.items():
+            setattr(existing, key, value)
+        await session.flush()
+        return existing
+
     video = Video(**data)
     session.add(video)
     await session.flush()

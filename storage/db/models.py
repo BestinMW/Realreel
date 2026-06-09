@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import enum
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -59,6 +59,7 @@ class Video(Base):
     transcript_text: Mapped[str | None] = mapped_column(Text)
 
     duration_seconds: Mapped[Decimal | None] = mapped_column(Numeric(10, 3))
+    platform_upload_date: Mapped[date | None] = mapped_column()
     file_sha256: Mapped[str | None] = mapped_column(String(64), unique=True)
 
     video_embedding: Mapped[list[float] | None] = mapped_column(

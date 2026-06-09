@@ -24,6 +24,7 @@ async def find_similar_videos(
     limit: int = 10,
     max_cosine_distance: float = 0.2,
     exclude_video_id: uuid.UUID | None = None,
+    exclude_original_url: str | None = None,
 ) -> list[dict[str, Any]]:
     """Find previously analyzed videos similar to a new whole-video embedding."""
     validate_embedding(embedding)
@@ -35,6 +36,8 @@ async def find_similar_videos(
             v.platform,
             v.title,
             v.thumbnail_path,
+            v.uploader_handle,
+            v.platform_upload_date,
             v.file_sha256,
             v.created_at,
             v.overall_risk_score,
@@ -45,6 +48,10 @@ async def find_similar_videos(
           and (
             cast(:exclude_video_id as uuid) is null
             or v.id != cast(:exclude_video_id as uuid)
+          )
+          and (
+            cast(:exclude_original_url as text) is null
+            or v.original_url != cast(:exclude_original_url as text)
           )
           and (v.video_embedding <=> cast(:embedding as vector)) <= :max_distance
         order by v.video_embedding <=> cast(:embedding as vector)
@@ -57,6 +64,7 @@ async def find_similar_videos(
             "limit": limit,
             "max_distance": max_cosine_distance,
             "exclude_video_id": str(exclude_video_id) if exclude_video_id else None,
+            "exclude_original_url": exclude_original_url,
         },
     )
     return [dict(row._mapping) for row in result]

@@ -26,6 +26,11 @@ type ProcessingResult = {
   thumbnailClickbaitRationale?: string;
   thumbnailClickbaitMismatches?: string[];
   recommendedAction?: string;
+  isRepost?: boolean;
+  repostProbability?: number | null;
+  repostRisk?: number | null;
+  repostRationale?: string;
+  repostMatches?: Array<Record<string, unknown>>;
 };
 
 type ProgressEvent =
@@ -152,9 +157,23 @@ function getReliabilityScore(result: ProcessingResult | null) {
     typeof result.thumbnailClickbaitScore === "number"
       ? result.thumbnailClickbaitScore
       : null;
-  const highestRisk = Math.max(misleadingRisk ?? 0, visualRisk ?? 0, thumbnailRisk ?? 0);
+  const repostRisk =
+    typeof result.repostRisk === "number"
+      ? result.repostRisk
+      : null;
+  const highestRisk = Math.max(
+    misleadingRisk ?? 0,
+    visualRisk ?? 0,
+    thumbnailRisk ?? 0,
+    repostRisk ?? 0,
+  );
 
-  if (misleadingRisk !== null || visualRisk !== null || thumbnailRisk !== null) {
+  if (
+    misleadingRisk !== null ||
+    visualRisk !== null ||
+    thumbnailRisk !== null ||
+    repostRisk !== null
+  ) {
     return Math.max(0, Math.min(100, Math.round((1 - highestRisk) * 100)));
   }
 
@@ -204,6 +223,10 @@ function getReliabilityExplanation(result: ProcessingResult | null) {
 
   if (result.misleadingProbabilityRationale) {
     parts.push(`Misleading context: ${result.misleadingProbabilityRationale}`);
+  }
+
+  if (typeof result.repostRisk === "number" && result.repostRationale) {
+    parts.push(`Repost risk: ${result.repostRationale}`);
   }
 
   if (result.recommendedAction === "flag_for_review") {
