@@ -1,133 +1,193 @@
 # RealReel
 
-RealReel analyzes short-form and social videos for misleading context, visual authenticity risk, thumbnail clickbait, and repost history. Users paste a URL in the web UI; a Python backend downloads the video, runs the analysis pipeline, uploads artifacts to Supabase Storage, and optionally saves scores to Postgres.
+RealReel helps you judge whether a social video is trustworthy. Paste a link from YouTube, TikTok, Instagram, Vimeo, or a direct video URL, and the app downloads the clip, analyzes misleading context and AI-generated visuals, checks repost history when configured, and shows a reliability score with a plain-language explanation. You can also submit feedback when an analysis looks right or wrong.
 
-## Requirements and design
+## Repository information
 
-The project requirements specification and design document is here:
+| Item | Path or link |
+|------|----------------|
+| **Source code** | [`frontend/`](frontend/) (interface), [`backend/`](backend/) (engine), [`storage/`](storage/) (persistence) |
+| **Tests** | [`tests/`](tests/) (`tests/interface/`, `tests/engine/`, `tests/storage/`) |
+| **Requirements specification and design** | [`docs/REQUIREMENTS_AND_DESIGN.md`](docs/REQUIREMENTS_AND_DESIGN.md) |
+| **Demo video** | [Watch the RealReel demo](https://youtu.be/REPLACE_WITH_YOUR_DEMO) — replace this URL with your recorded walkthrough |
 
-- [docs/REQUIREMENTS_AND_DESIGN.md](docs/REQUIREMENTS_AND_DESIGN.md)
+## Setup
 
-## Repository layout
+### Dependencies
 
-```text
-Realreel/
-  frontend/          Next.js UI
-  backend/           FastAPI video processor
-  storage/           Postgres + Supabase Storage layer (used by the backend)
-  tests/             interface/, engine/, and storage/ test suites
-  scripts/           start-backend.ps1, start-frontend.ps1, run_tests.py, check-deps.ps1
-```
+Install these before your first run:
 
-| Package | Role |
-|---------|------|
-| **frontend** | Preview URLs, stream analysis progress, show reliability score and rationales |
-| **backend** | Download (yt-dlp), ffmpeg media prep, transcription, vision/OCR, claim check, uploads |
-| **storage** | `videos` table schema, repost lookup, pgvector search, optional REST API module |
+| Dependency | Purpose |
+|------------|---------|
+| **Python 3.12+** | Backend processor and storage services |
+| **Node.js** | Next.js web UI |
+| **ffmpeg** | Audio extraction and frame sampling |
+| **yt-dlp** | Video download from supported platforms |
+| **Tesseract OCR** (optional) | On-screen text in keyframes |
 
-The backend imports `storage/` at runtime (repo root is added to `sys.path` in `backend/main.py`). The default processor app does **not** mount the storage FastAPI router; the analysis pipeline calls storage services directly for repost checks and DB saves.
-
-## How a run works
-
-1. Frontend `POST /api/process-youtube` proxies to backend `POST /process-youtube`.
-2. Backend streams NDJSON progress events, then a `complete` result with scores and paths.
-3. Artifacts (audio, transcript, analysis JSON, thumbnail) upload to **Supabase Storage** buckets.
-4. If `DATABASE_URL` is set, the backend also:
-   - checks repost history against saved videos (hash match today; embedding similarity when available)
-   - upserts one row in `public.videos` with scores and `platform_upload_date`
-
-## Execution instructions
-
-**Prerequisites:** Python 3.12+, Node.js, `ffmpeg`, `yt-dlp`. Tesseract is optional (OCR).
-
-1. Check local dependencies from the repository root:
+On Windows, from the repo root:
 
 ```powershell
-# From Realreel/
 .\scripts\check-deps.ps1
 ```
 
-2. Create backend environment settings in `backend/.env.local`.
+Missing tools can be installed with `winget` (see `backend/README.md`).
 
-Minimum local values:
+### Python and Node packages
+
+The start scripts install these automatically on first run. To install manually:
+
+```powershell
+cd backend
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+
+cd ..\frontend
+npm install
+```
+
+### One-time configuration
+
+1. **Supabase (recommended)**  
+   - Create a Supabase project.  
+   - Run `storage/schema.sql` once in the Supabase SQL Editor (creates `videos`, `analysis_feedback`, and storage buckets).  
+   - Copy your project URL, service role key, and Postgres connection string from the dashboard.
+
+2. **Backend credentials** — create `backend/.env.local`:
 
 ```env
-OPENAI_API_KEY=...
-GEMINI_API_KEY=...
+OPENAI_API_KEY=your-openai-api-key
+GEMINI_API_KEY=your-gemini-api-key
 SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
 CORS_ORIGINS=http://localhost:3000
 ```
 
-Optional database settings for repost history and saving analyzed videos:
+3. **Database (optional, enables repost checks and saving results)** — add to `backend/.env.local`:
 
 ```env
-DATABASE_URL=postgresql+asyncpg://...
+DATABASE_URL=postgresql+asyncpg://postgres.[ref]:[password]@....pooler.supabase.com:5432/postgres
 ENABLE_REPOST_ASSESSMENT=true
 ENABLE_DATABASE_SAVE=true
 ```
 
-3. Create frontend environment settings in `frontend/.env.local`:
+You can mirror the same Supabase/Postgres values in `storage/.env`; the backend loads that file as a fallback.
+
+4. **Frontend** — create `frontend/.env.local`:
 
 ```env
 PROCESSOR_URL=http://localhost:8000
 ```
 
-4. Start the backend in terminal 1:
+Analysis still runs without `DATABASE_URL`; repost history, database saves, and feedback persistence require Postgres to be configured and the schema applied.
+
+## Execution instructions
+
+Use two terminals from the repository root.
+
+**Terminal 1 — backend**
 
 ```powershell
-# From Realreel/
 .\scripts\start-backend.ps1
 ```
 
-Backend health check: http://localhost:8000/health
+Verify: http://localhost:8000/health
 
-5. Start the frontend in terminal 2:
+**Terminal 2 — frontend**
 
 ```powershell
-# From Realreel/
 .\scripts\start-frontend.ps1
 ```
 
-Open the app at http://localhost:3000
+Open the app: http://localhost:3000
 
-6. Paste a supported video URL, optionally toggle fast mode, then click `Process Video`.
+Paste a video URL, optionally turn on **Fast mode**, then click **Process Video**.
 
-### Environment files
+## Usage examples
 
-| File | Purpose |
-|------|---------|
-| `backend/.env.local` | API keys, Supabase, optional `DATABASE_URL`, pipeline flags |
-| `storage/.env` | Same Supabase/Postgres vars (backend loads this as a fallback) |
-| `frontend/.env.local` | `PROCESSOR_URL=http://localhost:8000` only |
+### Example 1: Preview and submit a YouTube link
 
-## Tests
+**Input**
 
-Unit tests (pytest):
+- URL: `https://www.youtube.com/watch?v=dQw4w9WgXcQ`
+- Fast mode: Off
 
-```bash
+**What you see**
+
+- An embedded YouTube preview in the page.
+- **Process Video** enabled after the URL validates.
+- A progress bar with stages such as `Downloading`, `Transcribing`, `Analyzing claim`.
+- When finished, a **Reliability Score** (0–100%) and a short explanation built from claim, visual, thumbnail, and repost signals.
+
+**If something goes wrong**
+
+- Empty or invalid URL → prompt to enter a full `https://` link; button stays disabled.
+- Backend not running → error that the processor could not be reached.
+
+### Example 2: Reliability analysis and repost signals
+
+**Input**
+
+- URL: `https://www.tiktok.com/@example/video/1234567890`
+- Fast mode: Off (full analysis including metadata and thumbnail checks)
+
+**Expected output (illustrative)**
+
+| Field | Example value | Meaning |
+|-------|---------------|---------|
+| `misleadingProbability` | `0.65` | Risk the video could mislead viewers (0–1) |
+| `visualAuthenticityRisk` | `0.72` | Risk the footage is AI-generated or synthetic (0–1) |
+| Reliability score (UI) | `28%` | `100 × (1 − max(risk scores))` |
+| `claimSummary` | Short text | What the video appears to claim |
+| `isRepost` / `repostRationale` | When DB is configured | Whether similar footage was uploaded earlier |
+
+If there is no clear spoken claim, the backend may return `claimVerdict: no_clear_claim` and still show visual and repost rationales. With Supabase configured, artifacts and scores can be saved for later repost comparison.
+
+### Example 3: Analysis feedback
+
+**Input** (after a completed analysis)
+
+- Label: **Incorrect**
+- Comment: `AI score is high when the video is clearly not AI.`
+
+**Expected output**
+
+- Message: `feedback submitted`
+- Record stored in `public.analysis_feedback` when the database is configured.
+
+**If something goes wrong**
+
+- Missing label → `empty feedback`
+- Database unavailable → `feedback to storage failure`
+
+## Project structure
+
+RealReel uses three layers — interface, engine, and storage — rather than a single `src/` folder.
+
+| Path | Layer | Role |
+|------|-------|------|
+| `frontend/` | Interface | Next.js UI, URL preview, progress display, reliability score, feedback form |
+| `frontend/app/api/` | Interface | Proxies to the backend (`process-youtube`, `feedback`) |
+| `backend/` | Engine | FastAPI app, video download, analysis pipeline |
+| `backend/pipeline/` | Engine | Transcription, vision, claim check, metadata, thumbnail, orchestration |
+| `storage/` | Storage | Postgres models, Supabase uploads, repost detection, feedback persistence |
+| `storage/schema.sql` | Storage | Database and bucket setup for Supabase |
+| `scripts/` | — | `start-backend.ps1`, `start-frontend.ps1`, `check-deps.ps1`, `run_tests.py` |
+| `docs/` | — | Requirements and design reference |
+
+### Tests
+
+| Path | Layer | What it covers |
+|------|-------|----------------|
+| `tests/interface/` | Interface | Reliability score display logic |
+| `tests/engine/` | Engine | URL parsing, indicators, claim analysis, metadata rules, feedback validation |
+| `tests/storage/` | Storage | Video payloads, repost rules, feedback persistence |
+| `tests/conftest.py` | — | Shared test environment setup |
+
+Run tests:
+
+```powershell
 pip install -r requirements-test.txt
 python scripts/run_tests.py
 ```
-
-This runs `tests/interface`, `tests/engine`, and `tests/storage`. Storage integration smoke test (requires real `DATABASE_URL`):
-
-```bash
-python tests/storage/smoke_test.py
-```
-
-## Reliability score (UI)
-
-The frontend computes:
-
-```text
-reliability = 100 * (1 - max(misleadingProbability, visualAuthenticityRisk, thumbnailClickbaitScore, repostRisk))
-```
-
-Each risk is on a 0-1 scale from the backend result. Repost is a separate score, not folded into misleading probability.
-
-## More documentation
-
-- [backend/README.md](backend/README.md) - pipeline stages, env vars, API
-- [storage/README.md](storage/README.md) - `videos` table, buckets, repost logic, optional REST API
-- [frontend/README.md](frontend/README.md) - UI proxy and local setup
