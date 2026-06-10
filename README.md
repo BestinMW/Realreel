@@ -9,7 +9,8 @@ RealReel helps you judge whether a social video is trustworthy. Paste a link fro
 | **Source code** | [`frontend/`](frontend/) (interface), [`backend/`](backend/) (engine), [`storage/`](storage/) (persistence) |
 | **Tests** | [`tests/`](tests/) (`tests/interface/`, `tests/engine/`, `tests/storage/`) |
 | **Requirements specification and design** | [`docs/REQUIREMENTS_AND_DESIGN.md`](docs/REQUIREMENTS_AND_DESIGN.md) |
-| **Demo video** | [Watch the RealReel demo](https://youtu.be/REPLACE_WITH_YOUR_DEMO) — replace this URL with your recorded walkthrough |
+| **Demo video** | [`docs/demo.mp4`](docs/demo.mp4) |
+| **Report** | [`docs/REPORT.md`](docs/REPORT.md) |
 
 ## Setup
 
