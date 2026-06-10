@@ -191,4 +191,9 @@ Run tests:
 ```powershell
 pip install -r requirements.txt
 python scripts/run_tests.py
+
+OR
+
+pip install -r requirements.txt
+python -m pytest --cov=backend --cov=storage --cov-report=term-missing tests/
 ```
