@@ -7,51 +7,78 @@
 ## Workload Split
 
 ### Parsa Tehrani
-- Defined the RealReel project concept and core goal: analyzing social/video URLs for reliability, misleading context, visual authenticity risk, thumbnail clickbait, and repost history.
-- Built and refined the main user-facing workflow in the frontend:
+- Worked on the RealReel project concept and user-facing product direction:
+  - reliability scoring for social/video URLs
+  - misleading-context detection
+  - visual authenticity risk
+  - thumbnail clickbait risk
+  - repost-history awareness
+- Contributed to the frontend workflow:
   - URL input and validation
   - video preview behavior
   - fast processing mode toggle
-  - progress display
-  - reliability score and explanation output
-- Removed the old debug page from the app so users only see the polished main experience.
-- Added README execution instructions:
-  - dependency check command
-  - backend setup and startup
-  - frontend setup and startup
-  - required environment files
-  - test commands
-- Helped define the project requirements and design direction.
+  - processing progress display
+  - final reliability score and explanation UI
+- Contributed to backend pipeline behavior:
+  - request flow between the frontend proxy and FastAPI processor
+  - progress-streaming behavior for processing stages
+  - fast processing mode behavior and skipped-stage handling
+  - reliability-score fields returned from backend results
+- Worked on media and analysis pipeline features:
+  - frame/keyframe handling
+  - temporal consistency outputs
+  - thumbnail and transcript result fields
+  - user-facing summary/rationale fields
+- Added and reviewed documentation:
+  - README execution instructions
+  - environment setup notes
+  - requirements/design worksheet content
+- Contributed to test coverage improvements:
+  - interface behavior tests
+  - backend processing-flow tests
+  - mocked tests for fast-mode and non-fast-mode processing
+  - verification of the final coverage command and output
 
 ### Bestin Watts
-- Developed and organized the backend processing architecture:
+- Helped build and organize the backend architecture:
   - FastAPI processing endpoint
-  - video download and metadata handling
+  - video URL parsing and platform handling
+  - video download metadata flow
   - audio extraction and transcription flow
-  - frame/keyframe extraction
-  - temporal consistency analysis
-  - OCR and vision analysis
-  - claim analysis
-  - thumbnail clickbait analysis
-  - repost assessment
-- Implemented storage-related functionality:
-  - Supabase Storage artifact upload paths
+  - claim-analysis result shaping
+- Contributed to visual and authenticity analysis:
+  - OCR/vision result structure
+  - Gemini/Vertex response handling
+  - temporal/event-window analysis helpers
+  - thumbnail clickbait analysis behavior
+- Worked on storage and persistence features:
+  - Supabase Storage artifact paths
+  - raw video/audio/transcript/analysis upload flow
   - database save helpers
   - repost lookup helpers
   - vector search support
-- Created the formal requirements/design worksheet at:
-  - `docs/REQUIREMENTS_AND_DESIGN.md`
-- Expanded automated test coverage across backend, storage, and interface behavior.
-- Added mocked unit tests for external-service-heavy paths, including:
-  - OpenAI claim analysis
-  - Gemini/Vertex vision analysis
-  - yt-dlp download behavior
-  - ffmpeg/ffprobe media helpers
-  - Supabase upload wrappers
-  - database sync bridge behavior
+- Improved project documentation:
+  - requirements/design worksheet formatting
+  - architecture mapping
+  - interface contract descriptions
+  - README links to project documentation
+- Contributed to automated testing:
+  - storage and repost tests
+  - backend helper tests
+  - mocked external-service tests for OpenAI, Gemini/Vertex, yt-dlp, ffmpeg, Supabase, and database behavior
+  - coverage cleanup for edge cases and failure paths
 
 ## Shared Work
-- Reviewed the project structure and aligned frontend, backend, storage, and documentation into one coherent workflow.
+- Integrated the frontend, backend, and storage layers into one coherent workflow.
+- Removed the old debug page and kept the app focused on the main user experience.
+- Reviewed and refined the requirements/design document:
+  - Part A: functionality
+  - Part B: architecture mapping
+  - Part C: interface contracts
+- Expanded the automated test suite together across:
+  - `backend`
+  - `storage`
+  - `interface`
 - Verified local test coverage using:
 
 ```powershell
