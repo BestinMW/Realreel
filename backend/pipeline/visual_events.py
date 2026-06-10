@@ -21,6 +21,15 @@ from .vision import (
 
 
 def _timestamp_for_index(index: int, sample_rate: float) -> float:
+    """Convert a frame index to a timestamp in seconds.
+
+    Args:
+        index (int): Zero-based index of the sampled frame.
+        sample_rate (float): Frames sampled per second.
+
+    Returns:
+        float: Timestamp in seconds, rounded to three decimal places.
+    """
     return round(index / max(sample_rate, 0.001), 3)
 
 
@@ -31,6 +40,19 @@ def analyze_visual_events(
     output_path: Path,
     frame_sample_rate: float | None = None,
 ) -> dict[str, Any]:
+    """Select high-risk frames, run vision analysis, and write a JSON report.
+
+    Args:
+        frame_paths (list[Path]): All sampled frame image paths in order.
+        temporal_analysis (dict): Prior temporal consistency analysis result.
+        output_path (Path): Destination path for the JSON analysis artifact.
+        frame_sample_rate (float | None): Frames-per-second sampling rate; defaults to
+            ``FRAME_SAMPLE_RATE`` when ``None``.
+
+    Returns:
+        dict[str, Any]: Visual events analysis with analyzed ``frames``, ``summary``,
+        and ``eventWindowConsistency``.
+    """
     sample_rate = frame_sample_rate if frame_sample_rate is not None else FRAME_SAMPLE_RATE
 
     selected_frames = _select_event_frames(
@@ -67,6 +89,16 @@ def analyze_visual_events(
 
 
 def _analyze_selected_event_frame(selected_frame: dict[str, Any]) -> dict[str, Any]:
+    """Run Gemini vision and authenticity analysis on one selected frame.
+
+    Args:
+        selected_frame (dict[str, Any]): Selection metadata including ``path``,
+            ``index``, and ``reason``.
+
+    Returns:
+        dict[str, Any]: Frame record with vision indicators, authenticity scores,
+        and selection metadata.
+    """
     frame_path = selected_frame["path"]
     frame_index = selected_frame["index"]
     sample_rate = selected_frame.get("sample_rate", FRAME_SAMPLE_RATE)
@@ -105,6 +137,17 @@ def _select_event_frames(
     limit: int,
     window_radius: int,
 ) -> list[dict[str, Any]]:
+    """Pick frames around suspicious temporal windows with even fallback sampling.
+
+    Args:
+        frame_paths (list[Path]): All sampled frame image paths.
+        temporal_analysis (dict): Temporal analysis with comparisons and risk signals.
+        limit (int): Maximum number of frames to select for analysis.
+        window_radius (int): Frames to include on each side of a suspicious pair center.
+
+    Returns:
+        list[dict[str, Any]]: Selected frame descriptors ordered by frame index.
+    """
     if not frame_paths or limit <= 0:
         return []
 
@@ -174,12 +217,31 @@ def _select_event_frames(
 
 
 def _window_indexes(*, center_index: int, frame_count: int, radius: int) -> list[int]:
+    """List frame indexes within a radius of a center index.
+
+    Args:
+        center_index (int): Center frame index for the temporal event window.
+        frame_count (int): Total number of sampled frames.
+        radius (int): Number of frames to include on each side of the center.
+
+    Returns:
+        list[int]: Inclusive range of frame indexes within the window.
+    """
     start = max(0, center_index - radius)
     end = min(frame_count - 1, center_index + radius)
     return list(range(start, end + 1))
 
 
 def _evenly_spaced_indexes(count: int, limit: int) -> list[int]:
+    """Select up to ``limit`` evenly distributed indexes across ``count`` frames.
+
+    Args:
+        count (int): Total number of available frames.
+        limit (int): Maximum number of indexes to return.
+
+    Returns:
+        list[int]: Sorted distinct frame indexes spread across the sequence.
+    """
     if count <= 0 or limit <= 0:
         return []
     if count <= limit:
@@ -197,10 +259,28 @@ def _evenly_spaced_indexes(count: int, limit: int) -> list[int]:
 
 
 def _ordered_selected(selected_by_index: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
+    """Sort selected frame descriptors by ascending frame index.
+
+    Args:
+        selected_by_index (dict[int, dict[str, Any]]): Selected frames keyed by index.
+
+    Returns:
+        list[dict[str, Any]]: Selected frame descriptors in playback order.
+    """
     return [selected_by_index[index] for index in sorted(selected_by_index)]
 
 
 def _summarize(frames: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate vision and authenticity signals across analyzed frames.
+
+    Args:
+        frames (list[dict[str, Any]]): Analyzed frame records with vision and
+            authenticity results.
+
+    Returns:
+        dict[str, Any]: Summary with destructive events, synthetic likelihood,
+        authenticity scores, and selection reason counts.
+    """
     destructive_events = []
     synthetic_likelihoods = []
     synthetic_signals = set()
@@ -270,6 +350,14 @@ def _summarize(frames: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _highest_likelihood(values: list[str]) -> str:
+    """Return the highest synthetic likelihood label from a list of values.
+
+    Args:
+        values (list[str]): Likelihood labels such as ``low``, ``medium``, or ``high``.
+
+    Returns:
+        str: Highest-ranked label, or ``unknown`` when ``values`` is empty.
+    """
     order = {"low": 1, "medium": 2, "high": 3}
     if not values:
         return "unknown"

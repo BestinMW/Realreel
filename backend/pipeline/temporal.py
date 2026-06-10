@@ -17,9 +17,30 @@ def analyze_temporal_consistency(
     output_path: Path,
     frame_sample_rate: float | None = None,
 ) -> dict[str, Any]:
+    """Compare sampled frames for temporal consistency and write a JSON report.
+
+    Args:
+        frame_paths (list[Path]): Sampled frame image paths in playback order.
+        keyframe_timestamps (list[float]): Detected scene-change timestamps in seconds.
+        output_path (Path): Destination path for the JSON analysis artifact.
+        frame_sample_rate (float | None): Frames-per-second sampling rate; defaults to
+            ``FRAME_SAMPLE_RATE`` when ``None``.
+
+    Returns:
+        dict[str, Any]: Temporal analysis with ``frames``, ``comparisons``, and
+        ``summary`` scores.
+    """
     sample_rate = frame_sample_rate if frame_sample_rate is not None else FRAME_SAMPLE_RATE
 
     def timestamp_for_index(index: int) -> float:
+        """Map a sampled frame index to seconds using the effective sample rate.
+
+        Args:
+            index (int): Zero-based index in the sampled frame list.
+
+        Returns:
+            float: Timestamp in seconds, rounded to three decimal places.
+        """
         return round(index / max(sample_rate, 0.001), 3)
 
     frames = [
@@ -79,6 +100,15 @@ def analyze_temporal_consistency(
 
 
 def _frame_signature(frame_path: Path) -> dict[str, Any]:
+    """Build a grayscale, color, and edge signature for one frame image.
+
+    Args:
+        frame_path (Path): Path to a sampled frame image.
+
+    Returns:
+        dict[str, Any]: Signature with ``grayscale`` PIL image, ``rgbMean``, and
+        ``edgeMean``.
+    """
     with Image.open(frame_path) as image:
         rgb = image.convert("RGB").resize((160, 90))
         grayscale = rgb.convert("L")
@@ -91,6 +121,15 @@ def _frame_signature(frame_path: Path) -> dict[str, Any]:
 
 
 def _signature_difference(previous: dict[str, Any], current: dict[str, Any]) -> dict[str, float]:
+    """Measure pixel, color, and texture change between two frame signatures.
+
+    Args:
+        previous (dict[str, Any]): Earlier frame signature from ``_frame_signature``.
+        current (dict[str, Any]): Later frame signature from ``_frame_signature``.
+
+    Returns:
+        dict[str, float]: ``meanPixelDifference``, ``colorShift``, and ``textureShift``.
+    """
     difference = ImageChops.difference(previous["grayscale"], current["grayscale"])
     mean_pixel_difference = ImageStat.Stat(difference).mean[0] / 255.0
     color_shift = mean(
@@ -110,12 +149,31 @@ def _has_scene_change_between(
     start: float,
     end: float,
 ) -> bool:
+    """Check whether a scene change falls near the interval between two timestamps.
+
+    Args:
+        keyframe_timestamps (list[float]): Scene-cut timestamps in seconds.
+        start (float): Earlier comparison timestamp in seconds.
+        end (float): Later comparison timestamp in seconds.
+
+    Returns:
+        bool: ``True`` when a keyframe timestamp lies within the padded interval.
+    """
     low = min(start, end) + 0.05
     high = max(start, end) + 0.05
     return any(low <= timestamp <= high for timestamp in keyframe_timestamps)
 
 
 def _comparison_risk_signals(diff: dict[str, float], scene_change_nearby: bool) -> list[str]:
+    """Derive risk signal labels from frame-to-frame difference metrics.
+
+    Args:
+        diff (dict[str, float]): Signature difference metrics for one frame pair.
+        scene_change_nearby (bool): Whether a scene cut lies near this pair.
+
+    Returns:
+        list[str]: Risk signal codes describing suspicious visual changes.
+    """
     signals = []
     if diff["meanPixelDifference"] >= 0.45 and not scene_change_nearby:
         signals.append("large_visual_change_without_scene_cut")
@@ -129,6 +187,14 @@ def _comparison_risk_signals(diff: dict[str, float], scene_change_nearby: bool) 
 
 
 def _comparison_instability_score(comparison: dict[str, Any]) -> float:
+    """Compute a normalized instability score for one adjacent-frame comparison.
+
+    Args:
+        comparison (dict[str, Any]): Comparison record with diff metrics and risk signals.
+
+    Returns:
+        float: Instability score in ``[0.0, 1.0]``.
+    """
     score = comparison["meanPixelDifference"] * 0.65
     score += comparison["colorShift"] * 0.2
     score += comparison["textureShift"] * 0.15
@@ -140,6 +206,15 @@ def _comparison_instability_score(comparison: dict[str, Any]) -> float:
 
 
 def _summarize(comparisons: list[dict[str, Any]], *, frame_count: int) -> dict[str, Any]:
+    """Aggregate frame-pair comparisons into summary scores and notes.
+
+    Args:
+        comparisons (list[dict[str, Any]]): Adjacent-frame comparison records.
+        frame_count (int): Total number of sampled frames analyzed.
+
+    Returns:
+        dict[str, Any]: Summary with instability scores, risk counts, and notes.
+    """
     if not comparisons:
         return {
             "temporalInstabilityScore": None,
@@ -208,6 +283,16 @@ def _summary_notes(
     suspicious_pair_count: int,
     scene_change_count: int,
 ) -> str:
+    """Produce a human-readable note explaining the temporal summary.
+
+    Args:
+        frame_count (int): Number of sampled frames available.
+        suspicious_pair_count (int): Comparisons with risk signals and no nearby scene cut.
+        scene_change_count (int): Comparisons with a nearby detected scene change.
+
+    Returns:
+        str: Explanatory note for the temporal consistency summary.
+    """
     if frame_count < 3:
         return "Low confidence because only a few sampled frames were available."
     if suspicious_pair_count:

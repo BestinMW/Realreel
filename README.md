@@ -171,7 +171,7 @@ RealReel uses three layers — interface, engine, and storage — rather than a 
 | `frontend/app/api/` | Interface | Proxies to the backend (`process-youtube`, `feedback`) |
 | `backend/` | Engine | FastAPI app, video download, analysis pipeline |
 | `backend/pipeline/` | Engine | Transcription, vision, claim check, metadata, thumbnail, orchestration |
-| `storage/` | Storage | Postgres models, Supabase uploads, repost detection, feedback persistence |
+| `storage/` | Storage | Postgres models, repost detection, feedback persistence, path templates |
 | `storage/schema.sql` | Storage | Database and bucket setup for Supabase |
 | `requirements.txt` | — | Single Python dependency file (backend, storage, tests) |
 | `scripts/` | — | `start-backend.ps1`, `start-frontend.ps1`, `check-deps.ps1`, `run_tests.py` |

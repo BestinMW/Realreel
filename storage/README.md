@@ -1,6 +1,6 @@
 # RealReel Storage and Database
 
-Postgres schema, Supabase Storage conventions, and Python services for persisting **completed** video analyses. The backend analysis pipeline imports this package directly; a separate FastAPI router is available if you want a standalone storage API.
+Postgres schema, Supabase Storage path conventions, and Python services for persisting **completed** video analyses. The backend analysis pipeline imports this package through `backend/adapters/`; no separate storage server is required.
 
 In-progress jobs are not tracked here—only finished runs upsert into `public.videos`.
 
@@ -8,7 +8,7 @@ In-progress jobs are not tracked here—only finished runs upsert into `public.v
 
 Each analyzed video can produce:
 
-1. **Files** in private Supabase Storage buckets (paths stored on the row)
+1. **Files** in private Supabase Storage buckets (paths stored on the row; uploaded by `backend/adapters/object_storage.py`)
 2. **One Postgres row** in `videos` with scores, metadata, and JSON `reasons`
 
 The backend saves the row after uploads when `DATABASE_URL` is set (`ENABLE_DATABASE_SAVE=true` by default).
@@ -62,22 +62,20 @@ storage/
   core/config.py             Pydantic settings from env
   db/
     models.py                SQLAlchemy `Video` model
-    session.py               Async engine (FastAPI / async callers)
+    session.py               Async engine for integration tests
     sync_bridge.py           Background event loop for sync pipeline DB calls
   services/
-    videos.py                Insert/update/query helpers
+    videos.py                Upsert analyzed rows (`persist_analyzed_video`)
     db_videos.py             Map pipeline result → `VideoCreate` → upsert
     reposts.py               Repost rules and sync bridge entrypoint
+    feedback.py              Persist analysis feedback
   vector/search.py           pgvector cosine similarity
-  assets/
-    paths.py                 Bucket names and path templates
-    supabase.py              Upload, signed URL, delete (optional Python client)
-  schemas/contracts.py       Pydantic `VideoCreate`, `VideoRead`, etc.
-  api/routes.py              Optional REST router (not mounted by default backend)
-  requirements.txt         Redirects to repo-root requirements.txt
+  assets/paths.py            Supabase object path templates
+  schemas/contracts.py       Pydantic `VideoCreate`, `FeedbackCreate`
+  requirements.txt           Redirects to repo-root requirements.txt
 ```
 
-Storage tests live in `tests/storage/` at the repo root (`test_pipeline_units.py`, `test_storage_reposts.py`, `test_db_videos.py`, `smoke_test.py`).
+Storage tests live in `tests/storage/` at the repo root (`test_pipeline_units.py`, `test_storage_reposts.py`, `test_db_videos.py`, `test_feedback.py`, `smoke_test.py`).
 
 ## Supabase setup
 
@@ -87,20 +85,12 @@ Storage tests live in `tests/storage/` at the repo root (`test_pipeline_units.py
 
 ```env
 DATABASE_URL=postgresql+asyncpg://postgres.[ref]:[password]@....pooler.supabase.com:5432/postgres
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=...
 EMBEDDING_DIMENSION=512
-SIGNED_URL_TTL_SECONDS=900
-RAW_VIDEOS_BUCKET=raw-videos
-AUDIO_BUCKET=audio
-TRANSCRIPTS_BUCKET=transcripts
-THUMBNAILS_BUCKET=thumbnails
-ANALYSIS_BUCKET=analysis
 ```
 
-Only the backend should use `SUPABASE_SERVICE_ROLE_KEY`. Never expose it in the frontend.
+Supabase Storage credentials and bucket names belong in `backend/.env.local` (see root `README.md`). Only the backend should use `SUPABASE_SERVICE_ROLE_KEY`.
 
-Install Python deps (for smoke test or standalone API):
+Install Python deps (for tests or smoke test):
 
 ```bash
 pip install -r requirements.txt
@@ -120,23 +110,18 @@ Private buckets (created by `schema.sql` or auto-created by the backend on first
 | `thumbnails` | Preview JPEG |
 | `analysis` | Claim, temporal, metadata, repost JSON artifacts |
 
-Object paths are stored on the `videos` row; files live in Supabase Storage.
-
-Example:
-
-```text
-bucket: analysis
-path: videos/youtube/{job_id}/analysis/claim-analysis.json
-```
+Object paths follow `storage/assets/paths.py` templates. Files are uploaded by `backend/adapters/object_storage.py` (httpx), not by a Python Supabase client in this package.
 
 ## How the backend uses this package
 
 `backend/main.py` adds the repo root to `sys.path` and loads `storage/.env` as a fallback.
 
-During `process_youtube_video`:
+During `process_youtube_video`, `backend/adapters/` calls:
 
 - **Repost** — `run_repost_assessment_sync()` via `sync_bridge` (needs `DATABASE_URL`)
 - **Save** — `persist_db_video_sync()` builds a `VideoCreate` payload including `platform_upload_date` from yt-dlp metadata
+- **Feedback** — `save_feedback_sync()` when the user submits Correct/Incorrect feedback
+- **Uploads** — `upload_to_supabase_storage()` in `backend/adapters/object_storage.py` (not in `storage/`)
 
 No separate storage server is required for the default app.
 
@@ -151,7 +136,7 @@ python scripts/run_tests.py
 Storage-specific tests only:
 
 ```bash
-python -m unittest discover tests/storage -t .
+python -m pytest tests/storage/ -v
 ```
 
 Live integration (creates and deletes one test row; requires valid `DATABASE_URL`):
@@ -159,29 +144,6 @@ Live integration (creates and deletes one test row; requires valid `DATABASE_URL
 ```bash
 python tests/storage/smoke_test.py
 ```
-
-## Optional FastAPI router
-
-Mount when running a dedicated storage service:
-
-```python
-from fastapi import FastAPI
-from storage.api import router as storage_router
-
-app = FastAPI()
-app.include_router(storage_router)
-```
-
-Endpoints include:
-
-- `POST /storage/videos` — save completed analysis (runs repost assessment on save)
-- `GET /storage/videos` — list recent rows
-- `GET /storage/videos/by-url` — lookup by `original_url`
-- `GET /storage/videos/by-sha256` — lookup by hash
-- `GET /storage/videos/{video_id}` — get one row
-- `POST /storage/videos/similar` — pgvector similarity search
-- `POST /storage/assets/signed-url` — short-lived private file URL
-- `DELETE /storage/videos/{video_id}` — delete row and storage prefixes
 
 ## pgvector
 

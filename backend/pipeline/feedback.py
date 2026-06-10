@@ -12,9 +12,15 @@ def validate_feedback_submission(
 ) -> dict[str, Any]:
     """Validate analysis feedback without touching persistence.
 
+    Args:
+        vid_id (str): Video identifier (database id, platform id, source URL, or submitted URL).
+        label (str): User label, must be ``Correct`` or ``Incorrect`` (case-insensitive).
+        comment (str): Optional free-text comment.
+
     Returns:
-        dict[str, Any]: ``{"status": "valid", "vid_id": ..., "label": ..., "comment": ...}``
-        on success, or ``{"status": "missing_fields", "message": "empty feedback"}``.
+        dict[str, Any]: ``{"status": "valid", "vid_id": str, "label": str, "comment": str | None}``
+        when both ``vid_id`` and ``label`` are present and valid. Otherwise
+        ``{"status": "missing_fields", "message": "empty feedback"}``.
     """
     cleaned_vid_id = (vid_id or "").strip()
     cleaned_label = (label or "").strip()

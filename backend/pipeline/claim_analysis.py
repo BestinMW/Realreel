@@ -18,6 +18,26 @@ def analyze_claim(
     temporal_analysis: dict | None = None,
     visual_event_analysis: dict | None = None,
 ) -> dict:
+    """Run web-augmented claim and visual-authenticity analysis for a processed video.
+
+    Args:
+        transcript (dict): Transcription packet with at least a ``text`` field.
+        keyframe_analysis (dict): Keyframe vision/OCR packet with a ``frames`` list.
+        temporal_analysis (dict | None): Optional temporal-consistency summary and comparisons.
+        visual_event_analysis (dict | None): Optional sampled-frame visual-event packet.
+
+    Returns:
+        dict: Claim-analysis contract (``verdict`` maps to ``claimVerdict`` in the API).
+        On success: ``ok`` is True, ``error`` is None, and fields include normalized
+        ``verdict`` (may be ``no_clear_claim`` when no clear factual claim is found),
+        ``misleadingProbability`` and ``visualAuthenticityRisk`` in 0.0–1.0, plus
+        evidence, sources, and recommended action. On stage failure (disabled feature,
+        missing API key, timeout, HTTP error, or unparseable model output): ``ok`` is
+        False with a non-empty ``error`` string and fallback partial fields from
+        ``_empty_result`` (null scores, empty rationales, ``verdict`` ``unverified``,
+        ``recommendedAction`` ``needs_more_evidence``). Unparseable responses also
+        include ``rawResponseText`` for debugging.
+    """
     if not CLAIM_ANALYSIS_ENABLED:
         return _empty_result("Claim analysis disabled by ENABLE_CLAIM_ANALYSIS=false.")
 
@@ -115,6 +135,17 @@ def _build_prompt(
     temporal_analysis: dict | None = None,
     visual_event_analysis: dict | None = None,
 ) -> str:
+    """Build the OpenAI fact-checking prompt from pipeline metadata packets.
+
+    Args:
+        transcript: Transcription packet used for spoken-claim context.
+        keyframe_analysis: Keyframe packet whose frames supply OCR and vision indicators.
+        temporal_analysis: Optional temporal-consistency summary and comparison examples.
+        visual_event_analysis: Optional visual-event frames and summary for event scans.
+
+    Returns:
+        Trimmed prompt string instructing the model to return JSON claim analysis.
+    """
     transcript_text = (transcript.get("text") or "").strip()
     frames = []
 
@@ -233,6 +264,14 @@ Additional sampled-frame visual event metadata:
 
 
 def _extract_response_text(payload: dict) -> str:
+    """Extract assistant text from an OpenAI Responses API payload.
+
+    Args:
+        payload: Parsed JSON body from the OpenAI Responses API.
+
+    Returns:
+        Concatenated output text, or an empty string when none is present.
+    """
     if isinstance(payload.get("output_text"), str):
         return payload["output_text"]
 
@@ -245,6 +284,14 @@ def _extract_response_text(payload: dict) -> str:
 
 
 def _parse_json_response(text: str) -> dict | None:
+    """Parse model output into a JSON object, tolerating fenced code blocks.
+
+    Args:
+        text: Raw model response text that may include markdown fences.
+
+    Returns:
+        Parsed dict when valid JSON is found, otherwise None.
+    """
     if not text:
         return None
     cleaned = text.strip()
@@ -265,6 +312,15 @@ def _parse_json_response(text: str) -> dict | None:
 
 
 def _normalize_claim_analysis(parsed: dict) -> dict:
+    """Normalize raw model claim-analysis JSON to the schema v1 field set.
+
+    Args:
+        parsed: Raw claim-analysis dict returned by the model.
+
+    Returns:
+        Dict with schemaVersion, clamped probabilities, validated enums, and
+        truncated string/list fields; does not set ``ok``, ``error``, or metadata.
+    """
     verdicts = {
         "true",
         "mostly_true",
@@ -357,6 +413,15 @@ def _normalize_claim_analysis(parsed: dict) -> dict:
 
 
 def _estimate_misleading_probability(*, verdict: Any, confidence: float | None) -> float | None:
+    """Estimate misleading probability from verdict and confidence when the model omits it.
+
+    Args:
+        verdict: Normalized claim verdict string.
+        confidence: Model confidence in 0.0–1.0, or None when unavailable.
+
+    Returns:
+        Estimated probability in 0.0–1.0, or None for unrecognized verdicts.
+    """
     base_by_verdict = {
         "true": 0.05,
         "mostly_true": 0.2,
@@ -387,6 +452,18 @@ def _estimate_visual_authenticity_risk(
     visual_event_analysis: dict | None,
     parsed: dict,
 ) -> dict[str, Any]:
+    """Fuse visual, temporal, and model signals into an authenticity-risk assessment.
+
+    Args:
+        keyframe_analysis: Keyframe packet with per-frame vision indicators.
+        temporal_analysis: Optional temporal-consistency summary and risk signals.
+        visual_event_analysis: Optional event-scan frames and authenticity summary.
+        parsed: Raw model output that may include an initial visualAuthenticityRisk.
+
+    Returns:
+        Dict with visualAuthenticityRisk (0.0–1.0), visualAuthenticityRationale,
+        visualAuthenticitySignals, and depictedEvent.
+    """
     model_risk = _normalize_probability(parsed.get("visualAuthenticityRisk"))
     signals: list[str] = []
     depicted_events: list[str] = []
@@ -560,6 +637,18 @@ def _merge_visual_risk_into_misleading_probability(
     verdict: Any,
     depicted_event: str | None,
 ) -> float | None:
+    """Raise misleading probability when visual authenticity risk warrants it.
+
+    Args:
+        misleading_probability: Base misleading probability from claim analysis.
+        visual_authenticity_risk: Computed visual authenticity risk in 0.0–1.0.
+        verdict: Normalized claim verdict string.
+        depicted_event: Short label for the depicted event, if any.
+
+    Returns:
+        Merged misleading probability in 0.0–1.0, or the base value when visual
+        risk is None.
+    """
     if visual_authenticity_risk is None:
         return misleading_probability
 
@@ -575,18 +664,43 @@ def _merge_visual_risk_into_misleading_probability(
 
 
 def _normalize_probability(value: Any) -> float | None:
+    """Clamp a numeric value to the 0.0–1.0 probability range.
+
+    Args:
+        value: Candidate probability value from model or pipeline metadata.
+
+    Returns:
+        Clamped float in 0.0–1.0, or None when the value is not a finite number.
+    """
     if isinstance(value, (int, float)) and value == value:
         return max(0.0, min(1.0, float(value)))
     return None
 
 
 def _most_common(values: list[str]) -> str | None:
+    """Return the most frequently occurring string in a list.
+
+    Args:
+        values: Non-empty list of string labels.
+
+    Returns:
+        The mode string, or None when the list is empty.
+    """
     if not values:
         return None
     return max(set(values), key=values.count)
 
 
 def _apply_visual_authenticity_guardrails(normalized: dict) -> dict:
+    """Tighten verdict and action when high visual authenticity risk is detected.
+
+    Args:
+        normalized: Normalized claim-analysis dict with visual risk fields.
+
+    Returns:
+        Updated dict that may downgrade verdict, raise misleadingProbability,
+        set recommendedAction to flag_for_review, and append summary context.
+    """
     visual_risk = normalized.get("visualAuthenticityRisk")
     depicted_event = normalized.get("depictedEvent")
     if not isinstance(visual_risk, (int, float)) or visual_risk < 0.6:
@@ -614,6 +728,18 @@ def _apply_visual_event_fallback(
     keyframe_analysis: dict,
     visual_event_analysis: dict | None,
 ) -> dict:
+    """Synthesize an implied visual claim when no explicit factual claim exists.
+
+    Args:
+        normalized: Normalized claim-analysis dict, often with no_clear_claim verdict.
+        keyframe_analysis: Keyframe packet used to derive a visual description.
+        visual_event_analysis: Optional visual-event packet for richer scene text.
+
+    Returns:
+        Updated dict with an implied claim, unverified verdict, and conservative
+        misleadingProbability when a meaningful visual description is available;
+        otherwise the input dict unchanged.
+    """
     visual_description = _best_visual_description(
         keyframe_analysis=keyframe_analysis,
         visual_event_analysis=visual_event_analysis,
@@ -671,6 +797,19 @@ def _remove_unsupported_web_specifics(
     keyframe_analysis: dict,
     visual_event_analysis: dict | None,
 ) -> dict:
+    """Strip web-search specifics that are not grounded in video metadata.
+
+    Args:
+        normalized: Normalized claim-analysis dict that may contain hallucinated details.
+        transcript: Transcription packet for grounding checks.
+        keyframe_analysis: Keyframe packet for scene and visible-text grounding.
+        visual_event_analysis: Optional visual-event packet for additional grounding.
+
+    Returns:
+        Updated dict with claim and summary rewritten to video-grounded language
+        when unsupported location, date, or incident specifics are detected;
+        otherwise the input dict unchanged.
+    """
     claim_text = " ".join(
         str(value or "")
         for value in (
@@ -733,6 +872,16 @@ def _video_grounding_text(
     keyframe_analysis: dict,
     visual_event_analysis: dict | None,
 ) -> str:
+    """Collect lowercase grounding text from transcript and visual metadata.
+
+    Args:
+        transcript: Transcription packet with spoken content.
+        keyframe_analysis: Keyframe packet with per-frame vision indicators.
+        visual_event_analysis: Optional visual-event packet with additional frames.
+
+    Returns:
+        Lowercased space-joined string of transcript and visual descriptor text.
+    """
     parts = [(transcript.get("text") or "")]
     for packet in (keyframe_analysis, visual_event_analysis or {}):
         for frame in packet.get("frames", []) or []:
@@ -747,10 +896,26 @@ def _video_grounding_text(
 
 
 def _has_specific_event_details(text: str) -> bool:
+    """Check whether text contains specific event details such as dates or locations.
+
+    Args:
+        text: Claim, summary, or depicted-event text to inspect.
+
+    Returns:
+        True when at least one specific event detail pattern matches.
+    """
     return bool(_specific_event_details(text))
 
 
 def _specific_event_details(text: str) -> list[str]:
+    """Extract specific event-detail phrases from text via regex heuristics.
+
+    Args:
+        text: Claim, summary, or depicted-event text to scan.
+
+    Returns:
+        List of matched detail strings such as dates, casualty counts, or places.
+    """
     details: list[str] = []
     details.extend(
         match.group(0)
@@ -802,6 +967,16 @@ def _visual_metadata_quality(
     keyframe_analysis: dict,
     visual_event_analysis: dict | None,
 ) -> dict:
+    """Summarize how much usable vision metadata is present across analyzed frames.
+
+    Args:
+        keyframe_analysis: Keyframe packet with per-frame vision results.
+        visual_event_analysis: Optional visual-event packet with additional frames.
+
+    Returns:
+        Dict with frameCount, meaningfulFrameCount, visionErrorCount, and
+        sampleVisionErrors.
+    """
     frame_count = 0
     meaningful_count = 0
     vision_error_count = 0
@@ -830,6 +1005,15 @@ def _visual_metadata_quality(
 
 
 def _frame_has_meaningful_visual_metadata(indicators: dict) -> bool:
+    """Determine whether a frame's vision indicators carry non-trivial scene data.
+
+    Args:
+        indicators: Vision indicators dict for a single sampled frame.
+
+    Returns:
+        True when scene description, objects, actions, visible text, or a
+        destructive event type is present.
+    """
     scene = str(indicators.get("sceneDescription") or "").strip().lower()
     if scene and scene not in {"unknown", "blank", "none"}:
         return True
@@ -846,6 +1030,15 @@ def _best_visual_description(
     keyframe_analysis: dict,
     visual_event_analysis: dict | None,
 ) -> str | None:
+    """Choose the most descriptive visual summary from analyzed frames.
+
+    Args:
+        keyframe_analysis: Keyframe packet with scene and event indicators.
+        visual_event_analysis: Optional visual-event packet searched first.
+
+    Returns:
+        Truncated description string, or None when no usable visual text exists.
+    """
     candidates: list[str] = []
     for packet in (visual_event_analysis or {}, keyframe_analysis):
         for frame in packet.get("frames", []) or []:
@@ -894,6 +1087,17 @@ def _apply_misleading_probability_floor(
     verdict: Any,
     claim_type: Any,
 ) -> float | None:
+    """Enforce minimum misleading probability for verdicts that imply viewer risk.
+
+    Args:
+        probability: Candidate misleading probability in 0.0–1.0.
+        verdict: Normalized claim verdict string.
+        claim_type: Normalized claimType string.
+
+    Returns:
+        Probability raised to the verdict floor when applicable, or None when
+        the input probability is None.
+    """
     if probability is None:
         return None
 
@@ -914,12 +1118,31 @@ def _apply_misleading_probability_floor(
 
 
 def _string_list(value: Any, *, limit: int) -> list[str]:
+    """Normalize an arbitrary value into a bounded list of trimmed strings.
+
+    Args:
+        value: Candidate list value from model output.
+        limit: Maximum number of items to keep.
+
+    Returns:
+        List of non-empty trimmed strings, or an empty list when value is not a list.
+    """
     if not isinstance(value, list):
         return []
     return [str(item).strip()[:300] for item in value[:limit] if str(item).strip()]
 
 
 def _extract_sources(payload: dict, model_sources: list[dict]) -> list[dict]:
+    """Merge model-cited and web-search sources from an OpenAI Responses payload.
+
+    Args:
+        payload: Parsed JSON body from the OpenAI Responses API.
+        model_sources: Evidence or source entries already parsed from model JSON.
+
+    Returns:
+        Deduplicated list of up to 10 source dicts with sourceTitle, url, supports,
+        and note fields.
+    """
     sources = list(model_sources)
     seen = {source.get("url") for source in sources if source.get("url")}
 
@@ -972,6 +1195,18 @@ def _extract_sources(payload: dict, model_sources: list[dict]) -> list[dict]:
 
 
 def _empty_result(error: str) -> dict:
+    """Build the partial fallback result returned when claim analysis cannot complete.
+
+    Args:
+        error: Human-readable failure reason for the claim-analysis stage.
+
+    Returns:
+        Partial contract dict with ``ok`` False, non-empty ``error``, schemaVersion,
+        model, and generatedAt metadata, plus safe fallback fields: ``claim`` None,
+        ``claimType`` ``none``, ``verdict`` ``unverified``, ``confidence`` and risk
+        scores None, empty rationales and evidence/sources lists, and
+        ``recommendedAction`` ``needs_more_evidence``.
+    """
     return {
         "schemaVersion": "1",
         "ok": False,

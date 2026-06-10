@@ -10,7 +10,14 @@ from .tools import get_ffprobe_command, resolve_exiftool_path
 
 
 def get_video_metadata(video_path: Path | str) -> dict[str, Any]:
-    """Raw ffprobe JSON for format and streams."""
+    """Return raw ffprobe JSON for format and stream metadata.
+
+    Args:
+        video_path (Path | str): Local video file to inspect.
+
+    Returns:
+        dict[str, Any]: Parsed ffprobe JSON containing ``format`` and ``streams``.
+    """
     path = Path(video_path)
     if not path.is_file():
         raise FileNotFoundError(f"Video file not found: {path}")
@@ -41,12 +48,26 @@ def get_video_metadata(video_path: Path | str) -> dict[str, Any]:
 
 
 def get_platform_metadata(url: str) -> dict[str, Any]:
-    """Raw yt-dlp info dict (equivalent to --dump-json), without downloading."""
+    """Return raw yt-dlp info dict (equivalent to --dump-json), without downloading.
+
+    Args:
+        url (str): Platform video page URL to inspect.
+
+    Returns:
+        dict[str, Any]: Sanitized yt-dlp metadata object for the resolved video entry.
+    """
     return extract_video_info(url)
 
 
 def get_embedded_metadata(video_path: Path | str) -> list[dict[str, Any]]:
-    """Raw exiftool JSON output for the file."""
+    """Return raw exiftool JSON output for a video file.
+
+    Args:
+        video_path (Path | str): Local video file to inspect.
+
+    Returns:
+        list[dict[str, Any]]: Parsed exiftool JSON array of tag dictionaries for the file.
+    """
     path = Path(video_path)
     if not path.is_file():
         raise FileNotFoundError(f"Video file not found: {path}")

@@ -127,7 +127,7 @@ For each functionality, map responsibilities to components.
   - Repost lookup and rules in `storage/services/reposts.py` (hash match; pgvector similarity when an embedding is supplied)
   - Map pipeline output to a `VideoCreate` row in `storage/services/db_videos.py`; upsert via `storage/services/videos.py`
   - Persist feedback in `public.analysis_feedback` via `storage/services/feedback.py`
-  - Optional standalone storage API (`storage/api/routes.py`) using `storage/assets/supabase.py` for signed URLs and service-layer uploads (separate from the engine's httpx upload adapter)
+  - Artifact uploads use `backend/adapters/object_storage.py` (httpx); storage owns Postgres persistence and repost rules only
 
 ### Functionality 4 Mapping
 - `interface` responsibilities:
@@ -139,8 +139,7 @@ For each functionality, map responsibilities to components.
   - Validate required fields and label format in `validate_feedback_submission()` (`backend/pipeline/feedback.py`)
   - Persist valid feedback through `submit_feedback()` (`backend/adapters/feedback.py`); do not persist feedback in the interface layer
 - `storage` responsibilities:
-  - Persist feedback records in `public.analysis_feedback` via `save_feedback()` in `storage/services/feedback.py`
-  - Expose `POST /storage/feedback` in `storage/api/routes.py` for direct storage API access
+  - Persist feedback records in `public.analysis_feedback` via `save_feedback_sync()` in `storage/services/feedback.py`
 
 ## Part C: Interface Contracts
 
@@ -234,9 +233,6 @@ For each functionality, map responsibilities to components.
     - `run_repost_assessment_sync(...)` in `storage/services/reposts.py`
     - `build_db_video_payload(...)` and `persist_db_video_sync(...)` in `storage/services/db_videos.py`
     - `persist_analyzed_video(session, payload)` in `storage/services/videos.py`
-  - **Optional standalone storage API** (not used by the default processing stream):
-    - `storage_service.upload(...)` in `storage/assets/supabase.py`
-    - `POST /storage/videos` in `storage/api/routes.py`
 - Input payload:
   ```json
   {
@@ -294,9 +290,6 @@ For each functionality, map responsibilities to components.
 - Function(s):
   - `submit_feedback(...)` in `backend/adapters/feedback.py` forwards to:
     - `save_feedback_sync(feedback_data)` in `storage/services/feedback.py`
-  - Optional direct storage API (not used by the default feedback proxy):
-    - `save_feedback(session, feedback_data)` in `storage/services/feedback.py`
-    - `POST /storage/feedback` in `storage/api/routes.py`
 - Input payload:
   ```json
   {

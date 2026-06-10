@@ -17,6 +17,14 @@ from .tools import get_ffmpeg_command
 
 
 def compute_file_sha256(path: Path) -> str:
+    """Compute the SHA-256 hex digest of a file on disk.
+
+    Args:
+        path (Path): Path to the file to hash.
+
+    Returns:
+        str: Lowercase hexadecimal SHA-256 digest of the file contents.
+    """
     digest = hashlib.sha256()
     with path.open("rb") as file_handle:
         for chunk in iter(lambda: file_handle.read(1024 * 1024), b""):
@@ -25,6 +33,18 @@ def compute_file_sha256(path: Path) -> str:
 
 
 def run_ffmpeg(args: list[str], capture_stderr: bool = False) -> str:
+    """Run ffmpeg with the given arguments and fail on non-zero exit codes.
+
+    Args:
+        args (list[str]): ffmpeg arguments (without the executable or ``-y`` flag).
+        capture_stderr (bool): When ``True``, return stderr text instead of an empty string.
+
+    Returns:
+        str: ffmpeg stderr when ``capture_stderr`` is ``True``; otherwise ``""``.
+
+    Raises:
+        RuntimeError: When ffmpeg is not found or exits with a non-zero status.
+    """
     command = [*get_ffmpeg_command(), "-y", *args]
     try:
         result = subprocess.run(
@@ -42,6 +62,15 @@ def run_ffmpeg(args: list[str], capture_stderr: bool = False) -> str:
 
 
 def probe_duration_seconds(video_path: Path) -> float:
+    """Read a video file's duration from ffmpeg probe output.
+
+    Args:
+        video_path (Path): Path to the input video file.
+
+    Returns:
+        float: Duration in seconds parsed from ffmpeg metadata, or ``0.0`` when
+            no ``Duration:`` field is found.
+    """
     command = [*get_ffmpeg_command(), "-i", str(video_path)]
     result = subprocess.run(command, capture_output=True, text=True, check=False)
     output = (result.stderr or "") + (result.stdout or "")
@@ -53,6 +82,15 @@ def probe_duration_seconds(video_path: Path) -> float:
 
 
 def extract_audio(video_path: Path, audio_path: Path) -> None:
+    """Extract mono 16 kHz audio from a video, or synthesize silence if none exists.
+
+    Args:
+        video_path (Path): Path to the source video file.
+        audio_path (Path): Output path for the generated WAV file.
+
+    Returns:
+        None
+    """
     try:
         run_ffmpeg(
             [
@@ -90,6 +128,15 @@ def extract_audio(video_path: Path, audio_path: Path) -> None:
 
 
 def create_audio_with_lead_in(source_path: Path, output_path: Path) -> None:
+    """Prepend silent lead-in audio before an existing mono WAV for transcription.
+
+    Args:
+        source_path (Path): Path to the source mono audio WAV.
+        output_path (Path): Output path for the concatenated WAV file.
+
+    Returns:
+        None
+    """
     lead_in = TRANSCRIPTION_LEAD_IN_SECONDS
     run_ffmpeg(
         [
@@ -115,7 +162,15 @@ def create_audio_with_lead_in(source_path: Path, output_path: Path) -> None:
 
 
 def compute_adaptive_frame_sample_rate(duration_seconds: float) -> float:
-    """Choose fps so extracted frame count scales with duration but stays bounded."""
+    """Choose an fps so sampled frame count scales with duration but stays bounded.
+
+    Args:
+        duration_seconds (float): Video duration in seconds.
+
+    Returns:
+        float: Frames-per-second sampling rate derived from configured min, max,
+            and target frame counts.
+    """
     duration = max(duration_seconds, 0.1)
     target_frames = max(1, TARGET_SAMPLED_FRAMES)
     min_frames = max(1, MIN_SAMPLED_FRAMES)
@@ -129,6 +184,16 @@ def compute_adaptive_frame_sample_rate(duration_seconds: float) -> float:
 
 
 def resolve_frame_sample_rate(video_path: Path) -> float:
+    """Resolve the frame sampling rate for a video.
+
+    Args:
+        video_path (Path): Path to the input video file.
+
+    Returns:
+        float: ``FRAME_SAMPLE_RATE`` when adaptive sampling is disabled or duration
+            cannot be probed; otherwise the adaptive rate from
+            ``compute_adaptive_frame_sample_rate``.
+    """
     if not ADAPTIVE_FRAME_SAMPLING:
         return FRAME_SAMPLE_RATE
 
@@ -139,7 +204,15 @@ def resolve_frame_sample_rate(video_path: Path) -> float:
 
 
 def extract_sampled_frames(video_path: Path, frames_dir: Path) -> float:
-    """Extract sampled JPEG frames. Returns the fps used for timestamp alignment."""
+    """Extract uniformly sampled JPEG frames from a video.
+
+    Args:
+        video_path (Path): Path to the input video file.
+        frames_dir (Path): Directory where ``frame_%05d.jpg`` files are written.
+
+    Returns:
+        float: Frames-per-second rate used for extraction and timestamp alignment.
+    """
     frames_dir.mkdir(parents=True, exist_ok=True)
     sample_rate = resolve_frame_sample_rate(video_path)
     run_ffmpeg(
@@ -157,6 +230,16 @@ def extract_sampled_frames(video_path: Path, frames_dir: Path) -> float:
 
 
 def extract_keyframes(video_path: Path, keyframes_dir: Path) -> list[float]:
+    """Extract scene-change keyframe JPEGs and collect their timestamps.
+
+    Args:
+        video_path (Path): Path to the input video file.
+        keyframes_dir (Path): Directory where ``keyframe_%05d.jpg`` files are written.
+
+    Returns:
+        list[float]: Presentation timestamps in seconds parsed from ffmpeg
+            ``showinfo`` stderr, in extraction order.
+    """
     keyframes_dir.mkdir(parents=True, exist_ok=True)
     interval = max(KEYFRAME_INTERVAL_SECONDS, 0.1)
     stderr = run_ffmpeg(
@@ -181,6 +264,15 @@ def extract_keyframes(video_path: Path, keyframes_dir: Path) -> list[float]:
 
 
 def list_image_files(directory: Path) -> list[Path]:
+    """List non-hidden files in a directory sorted by name.
+
+    Args:
+        directory (Path): Directory to scan for image files.
+
+    Returns:
+        list[Path]: Sorted file paths in ``directory``; ``[]`` when the directory
+            does not exist.
+    """
     if not directory.exists():
         return []
     return sorted(

@@ -51,3 +51,32 @@ def test_submit_feedback_returns_success_when_save_succeeds():
 
     assert result["status"] == "success"
     assert result["message"] == "feedback submitted"
+
+
+# ---------------------------------------------------------------------------
+# Test 4: validate_feedback_submission — partial or invalid fields
+# ---------------------------------------------------------------------------
+def test_validate_feedback_submission_returns_missing_fields_when_only_vid_id_provided():
+    result = validate_feedback_submission("vid-1", "", "")
+
+    assert result["status"] == "missing_fields"
+    assert result["message"] == "empty feedback"
+
+
+def test_validate_feedback_submission_returns_missing_fields_for_invalid_label():
+    result = validate_feedback_submission("vid-1", "Maybe", "not sure")
+
+    assert result["status"] == "missing_fields"
+    assert result["message"] == "empty feedback"
+
+
+# ---------------------------------------------------------------------------
+# Test 5: submit_feedback — validation failure short-circuits storage
+# ---------------------------------------------------------------------------
+def test_submit_feedback_returns_missing_fields_without_calling_storage():
+    with patch("adapters.feedback.save_feedback_sync") as save_mock:
+        result = submit_feedback("", "", "")
+
+    save_mock.assert_not_called()
+    assert result["status"] == "missing_fields"
+    assert result["message"] == "empty feedback"

@@ -5,7 +5,7 @@ from storage.db.models import (
     Platform,
     Video,
 )
-from storage.db.session import AsyncSessionLocal, engine, get_db_session
+from storage.db.session import AsyncSessionLocal, engine
 
 __all__ = [
     "AsyncSessionLocal",
@@ -13,5 +13,4 @@ __all__ = [
     "Platform",
     "Video",
     "engine",
-    "get_db_session",
 ]

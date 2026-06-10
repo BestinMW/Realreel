@@ -2,6 +2,16 @@ from urllib.parse import parse_qs, urlparse
 
 
 def parse_video_url(value: str | None) -> dict[str, str] | None:
+    """Parse a supported video URL into platform metadata.
+
+    Args:
+        value (str | None): Raw URL string from user input.
+
+    Returns:
+        dict[str, str] | None: Mapping with ``platform``, ``id``, and ``url`` keys
+            for YouTube, TikTok, Instagram, or direct video URLs; ``None`` if the
+            value is missing, invalid, or unsupported.
+    """
     if not value or not isinstance(value, str):
         return None
 
@@ -37,6 +47,15 @@ def parse_video_url(value: str | None) -> dict[str, str] | None:
 
 
 def parse_youtube_url(value: str | None) -> str | None:
+    """Extract the YouTube video ID from a URL.
+
+    Args:
+        value (str | None): YouTube URL in common formats (watch, youtu.be, shorts, etc.).
+
+    Returns:
+        str | None: YouTube video ID, or ``None`` if the value is missing, invalid,
+            or not a recognized YouTube URL.
+    """
     if not value or not isinstance(value, str):
         return None
 
@@ -50,6 +69,16 @@ def parse_youtube_url(value: str | None) -> str | None:
 
 
 def _parse_youtube_id(host: str, path: str, query: str) -> str | None:
+    """Resolve a YouTube video ID from URL components.
+
+    Args:
+        host (str): Normalized hostname without a ``www.`` prefix.
+        path (str): URL path component.
+        query (str): URL query string.
+
+    Returns:
+        str | None: YouTube video ID, or ``None`` if the host or path is not YouTube.
+    """
     is_youtube_host = host in {
         "youtube.com",
         "m.youtube.com",
@@ -75,6 +104,16 @@ def _parse_youtube_id(host: str, path: str, query: str) -> str | None:
 
 
 def _parse_tiktok_id(host: str, path: str) -> str | None:
+    """Resolve a TikTok video ID from URL components.
+
+    Args:
+        host (str): Normalized hostname without a ``www.`` prefix.
+        path (str): URL path component.
+
+    Returns:
+        str | None: TikTok video or share ID, or ``None`` if the host or path is
+            not a recognized TikTok URL pattern.
+    """
     if not (host == "tiktok.com" or host.endswith(".tiktok.com")):
         return None
 
@@ -95,6 +134,16 @@ def _parse_tiktok_id(host: str, path: str) -> str | None:
 
 
 def _parse_instagram_id(host: str, path: str) -> str | None:
+    """Resolve an Instagram media ID from URL components.
+
+    Args:
+        host (str): Normalized hostname without a ``www.`` prefix.
+        path (str): URL path component.
+
+    Returns:
+        str | None: Instagram reel, post, TV, or story media ID, or ``None`` if
+            the host or path is not a recognized Instagram URL pattern.
+    """
     if not (host == "instagram.com" or host.endswith(".instagram.com")):
         return None
 
@@ -109,6 +158,16 @@ def _parse_instagram_id(host: str, path: str) -> str | None:
 
 
 def _parse_direct_video_id(host: str, path: str) -> str | None:
+    """Resolve a stable ID for a direct video file URL.
+
+    Args:
+        host (str): Normalized hostname without a ``www.`` prefix.
+        path (str): URL path component.
+
+    Returns:
+        str | None: Sanitized filename or host segment used as the video ID, or
+            ``None`` if the URL does not point to a supported video file extension.
+    """
     if not host:
         return None
 
@@ -125,6 +184,14 @@ def _parse_direct_video_id(host: str, path: str) -> str | None:
 
 
 def safe_segment(value: str) -> str:
+    """Sanitize a string for use as a filesystem-safe identifier segment.
+
+    Args:
+        value (str): Raw segment text, such as a filename or URL path part.
+
+    Returns:
+        str: Input with non-alphanumeric characters replaced by underscores.
+    """
     import re
 
     return re.sub(r"[^a-zA-Z0-9_-]", "_", value)

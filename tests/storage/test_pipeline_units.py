@@ -79,8 +79,30 @@ def test_embedding_dimension_is_checked():
 
 
 # ---------------------------------------------------------------------------
-# Test 4: apply_repost_assessment_to_payload — raises misleading context
+# Test 4: apply_repost_assessment_to_payload — merge behavior
 # ---------------------------------------------------------------------------
+def test_repost_assessment_preserves_higher_existing_probability():
+    payload_data = {
+        "repost_probability": Decimal("0.7000"),
+        "misleading_context_score": Decimal("0.1000"),
+        "overall_risk_score": Decimal("0.2000"),
+        "reasons": {"flags": ["manual_review"]},
+    }
+    assessment = {
+        "isRepost": False,
+        "repostProbability": Decimal("0.5500"),
+        "matches": [],
+        "rationale": "Close but outside the repost threshold.",
+    }
+
+    merged = apply_repost_assessment_to_payload(payload_data, assessment)
+
+    assert merged["repost_probability"] == Decimal("0.7000")
+    assert merged["misleading_context_score"] == Decimal("0.1000")
+    assert merged["reasons"]["flags"] == ["manual_review"]
+    assert merged["reasons"]["repost"]["repostProbability"] == 0.55
+
+
 def test_repost_assessment_flags_misleading_context():
     payload_data = {
         "repost_probability": Decimal("0.1000"),
@@ -107,5 +129,6 @@ def test_repost_assessment_flags_misleading_context():
     assert merged["repost_probability"] == Decimal("0.9200")
     assert merged["misleading_context_score"] == Decimal("0.6500")
     assert merged["overall_risk_score"] == Decimal("0.6500")
-    assert "possible_repost" in merged["reasons"]["flags"]
+    assert merged["reasons"]["flags"] == ["possible_repost"]
+    assert "Reused footage" in merged["reasons"]["misleadingContext"]
     assert merged["reasons"]["repost"]["matches"][0]["similarity"] == 0.94

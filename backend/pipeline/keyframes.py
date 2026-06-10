@@ -23,6 +23,23 @@ def analyze_keyframes(
     output_path: Path,
     on_progress: Callable[[dict], None] | None = None,
 ) -> dict:
+    """Run OCR and vision analysis on keyframes and return the final JSON result.
+
+    Args:
+        keyframe_paths (list[Path]): Paths to keyframe image files to analyze.
+        keyframe_timestamps (list[float | None]): Timestamp in seconds for each
+            keyframe, aligned by index with ``keyframe_paths``.
+        output_path (Path): File path where the combined analysis JSON is written.
+        on_progress (Callable[[dict], None] | None): Optional callback invoked with
+            progress payloads from ``analyze_keyframes_stream``.
+
+    Returns:
+        dict: Combined keyframe analysis document with ``schemaVersion``,
+            ``generatedAt``, ``providerVersions``, ``frameCount``, and ``frames``.
+
+    Raises:
+        RuntimeError: When the streaming analysis does not produce a result event.
+    """
     result = None
     for event in analyze_keyframes_stream(
         keyframe_paths=keyframe_paths,
@@ -45,6 +62,19 @@ def analyze_keyframes_stream(
     keyframe_timestamps: list[float | None],
     output_path: Path,
 ) -> Generator[dict[str, Any], None, None]:
+    """Stream OCR and vision analysis progress and the final keyframe result.
+
+    Args:
+        keyframe_paths (list[Path]): Paths to keyframe image files to analyze.
+        keyframe_timestamps (list[float | None]): Timestamp in seconds for each
+            keyframe, aligned by index with ``keyframe_paths``.
+        output_path (Path): File path where the combined analysis JSON is written.
+
+    Returns:
+        Generator[dict[str, Any], None, None]: Yields ``{"kind": "progress",
+        "payload": {...}}`` events during analysis and a final
+        ``{"kind": "result", "payload": <analysis dict>}`` event.
+    """
     yield {
         "kind": "progress",
         "payload": {
@@ -101,6 +131,17 @@ def _analyze_single_keyframe(
     frame_path: Path,
     keyframe_timestamps: list[float | None],
 ) -> dict[str, Any]:
+    """Analyze one keyframe with OCR, vision, and cross-modal hints.
+
+    Args:
+        index (int): Zero-based index of the keyframe in the input list.
+        frame_path (Path): Path to the keyframe image file.
+        keyframe_timestamps (list[float | None]): Timestamps aligned to all keyframes.
+
+    Returns:
+        dict[str, Any]: Per-frame record with ``frame``, ``timestamp``,
+            ``timestampSeconds``, ``ocr``, ``vision``, and ``hints`` fields.
+    """
     ocr = analyze_frame_ocr(frame_path)
     vision = analyze_frame_with_gemini(
         frame_path,

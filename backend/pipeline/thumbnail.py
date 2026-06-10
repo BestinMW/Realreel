@@ -41,6 +41,14 @@ Do not flag it just because it is visually engaging. Return valid JSON only:
 
 
 def get_thumbnail_url(video_url: str) -> str | None:
+    """Resolve the best thumbnail URL for a video from its page URL.
+
+    Args:
+        video_url (str): Public video page URL to inspect.
+
+    Returns:
+        str | None: Highest-resolution thumbnail URL when available; otherwise ``None``.
+    """
     try:
         info = extract_video_info(video_url)
     except Exception:
@@ -49,6 +57,14 @@ def get_thumbnail_url(video_url: str) -> str | None:
 
 
 def get_thumbnail_url_from_info(info: dict[str, Any] | None) -> str | None:
+    """Pick a thumbnail URL from extracted video metadata.
+
+    Args:
+        info (dict[str, Any] | None): Video info dict from ``extract_video_info``.
+
+    Returns:
+        str | None: Preferred thumbnail URL, or ``None`` when metadata is missing.
+    """
     if not isinstance(info, dict):
         return None
 
@@ -63,6 +79,15 @@ def get_thumbnail_url_from_info(info: dict[str, Any] | None) -> str | None:
 
 
 def download_thumbnail(*, thumbnail_url: str, output_path: Path) -> Path | None:
+    """Download a remote thumbnail image to a local path.
+
+    Args:
+        thumbnail_url (str): HTTP(S) URL of the thumbnail image.
+        output_path (Path): Destination file path for the downloaded bytes.
+
+    Returns:
+        Path | None: ``output_path`` on success; ``None`` when the download fails.
+    """
     try:
         response = httpx.get(thumbnail_url, follow_redirects=True, timeout=30.0)
     except Exception:
@@ -77,6 +102,15 @@ def download_thumbnail(*, thumbnail_url: str, output_path: Path) -> Path | None:
 
 
 def create_thumbnail_fallback(*, keyframe_paths: list[Path], output_path: Path) -> Path | None:
+    """Create a thumbnail by copying the first extracted keyframe.
+
+    Args:
+        keyframe_paths (list[Path]): Local paths to sampled video keyframes.
+        output_path (Path): Destination path for the fallback thumbnail file.
+
+    Returns:
+        Path | None: ``output_path`` when a keyframe exists; otherwise ``None``.
+    """
     if not keyframe_paths:
         return None
 
@@ -93,6 +127,18 @@ def analyze_thumbnail_clickbait(
     keyframe_analysis: dict,
     visual_event_analysis: dict | None = None,
 ) -> dict[str, Any]:
+    """Score whether a thumbnail is clickbait relative to video context.
+
+    Args:
+        thumbnail_path (Path | None): Local path to the thumbnail image.
+        transcript (dict): Transcription payload for the video.
+        claim_analysis (dict): Claim and verdict analysis for the video.
+        keyframe_analysis (dict): Keyframe vision summaries from the pipeline.
+        visual_event_analysis (dict | None): Optional visual-event analysis payload.
+
+    Returns:
+        dict[str, Any]: Normalized clickbait result with score, risk level, and rationale.
+    """
     if not thumbnail_path or not thumbnail_path.exists():
         return _empty_clickbait_result("No thumbnail image was available.")
     if not VISION_ENABLED:
@@ -112,6 +158,15 @@ def analyze_thumbnail_clickbait(
 
 
 def _analyze_with_gemini_api(thumbnail_path: Path, prompt: str) -> dict[str, Any]:
+    """Run thumbnail clickbait analysis via the Gemini REST API.
+
+    Args:
+        thumbnail_path (Path): Local JPEG thumbnail to send to the model.
+        prompt (str): Full analysis prompt including video context.
+
+    Returns:
+        dict[str, Any]: Normalized clickbait result or an error-shaped empty result.
+    """
     api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     if not api_key:
         return _empty_clickbait_result("Gemini vision is not configured. Set GEMINI_API_KEY.")
@@ -155,6 +210,15 @@ def _analyze_with_gemini_api(thumbnail_path: Path, prompt: str) -> dict[str, Any
 
 
 def _analyze_with_vertex_ai(thumbnail_path: Path, prompt: str) -> dict[str, Any]:
+    """Run thumbnail clickbait analysis via Vertex AI Gemini.
+
+    Args:
+        thumbnail_path (Path): Local JPEG thumbnail to send to the model.
+        prompt (str): Full analysis prompt including video context.
+
+    Returns:
+        dict[str, Any]: Normalized clickbait result or an error-shaped empty result.
+    """
     if not VERTEX_AI_PROJECT_ID:
         return _empty_clickbait_result("Vertex AI vision is not configured. Set VERTEX_AI_PROJECT_ID.")
 
@@ -209,6 +273,14 @@ def _analyze_with_vertex_ai(thumbnail_path: Path, prompt: str) -> dict[str, Any]
 
 
 def _normalize_model_response(payload: dict) -> dict[str, Any]:
+    """Parse and normalize a Gemini generateContent response for clickbait scoring.
+
+    Args:
+        payload (dict): Raw JSON body from a Gemini or Vertex AI API response.
+
+    Returns:
+        dict[str, Any]: Standardized clickbait fields with clamped score and risk level.
+    """
     text, error = extract_gemini_text(payload)
     if error:
         return _empty_clickbait_result(error)
@@ -253,6 +325,17 @@ def _build_context(
     keyframe_analysis: dict,
     visual_event_analysis: dict | None,
 ) -> str:
+    """Serialize pipeline context for thumbnail clickbait comparison.
+
+    Args:
+        transcript (dict): Transcription payload for the video.
+        claim_analysis (dict): Claim and verdict analysis for the video.
+        keyframe_analysis (dict): Keyframe vision summaries from the pipeline.
+        visual_event_analysis (dict | None): Optional visual-event analysis payload.
+
+    Returns:
+        str: JSON string of transcript, claim, and frame summaries (truncated).
+    """
     frames = []
     for packet in (keyframe_analysis, visual_event_analysis or {}):
         for frame in (packet.get("frames") or [])[:8]:
@@ -280,6 +363,14 @@ def _build_context(
 
 
 def _empty_clickbait_result(error: str | None = None) -> dict[str, Any]:
+    """Build a default clickbait result when analysis cannot run or fails.
+
+    Args:
+        error (str | None): Human-readable failure reason; ``None`` marks success.
+
+    Returns:
+        dict[str, Any]: Clickbait result dict with empty fields and optional error.
+    """
     return {
         "ok": error is None,
         "clickbaitScore": None,
@@ -293,6 +384,15 @@ def _empty_clickbait_result(error: str | None = None) -> dict[str, Any]:
 
 
 def _string_list(value: Any, *, limit: int) -> list[str]:
+    """Coerce a model field into a bounded list of non-empty strings.
+
+    Args:
+        value (Any): Raw value from parsed model JSON.
+        limit (int): Maximum number of list items to keep.
+
+    Returns:
+        list[str]: Trimmed, truncated strings; empty when ``value`` is not a list.
+    """
     if not isinstance(value, list):
         return []
     return [str(item).strip()[:300] for item in value[:limit] if str(item).strip()]

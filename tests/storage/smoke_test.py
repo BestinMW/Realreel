@@ -17,11 +17,7 @@ try:
     from storage.db.models import Platform
     from storage.db.session import AsyncSessionLocal
     from storage.schemas import VideoCreate
-    from storage.services import (
-        find_video_by_sha256,
-        find_video_by_url,
-        save_analyzed_video,
-    )
+    from storage.services.videos import find_video_by_url, persist_analyzed_video
     from storage.vector import find_similar_videos
 except Exception as exc:
     print("Could not load storage settings.")
@@ -61,7 +57,7 @@ async def main() -> None:
     )
 
     async with AsyncSessionLocal() as session:
-        video = await save_analyzed_video(session, payload)
+        video = await persist_analyzed_video(session, payload)
         await session.commit()
         print(f"Created video row: {video.id}")
 
@@ -69,11 +65,6 @@ async def main() -> None:
         if by_url is None:
             raise RuntimeError("Could not retrieve video by original_url.")
         print("Retrieved video by URL.")
-
-        by_hash = await find_video_by_sha256(session, file_sha256)
-        if by_hash is None:
-            raise RuntimeError("Could not retrieve video by file_sha256.")
-        print("Retrieved video by file_sha256.")
 
         matches = await find_similar_videos(
             session,

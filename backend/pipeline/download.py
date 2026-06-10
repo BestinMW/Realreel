@@ -5,7 +5,14 @@ from .tools import get_ffmpeg_location_for_ytdlp
 
 
 def extract_video_info(url: str) -> dict[str, Any]:
-    """Return yt-dlp's info dict for a URL (same fields as --dump-json), without downloading."""
+    """Return yt-dlp's info dict for a URL (same fields as --dump-json), without downloading.
+
+    Args:
+        url (str): Video page URL to inspect.
+
+    Returns:
+        dict[str, Any]: Sanitized yt-dlp metadata object for the resolved video entry.
+    """
     try:
         import yt_dlp
     except ImportError as exc:
@@ -49,11 +56,30 @@ def extract_video_info(url: str) -> dict[str, Any]:
 
 
 def download_video(video_url: str, job_dir: Path) -> Path:
+    """Download a video file into a job directory.
+
+    Args:
+        video_url (str): Source video URL accepted by yt-dlp.
+        job_dir (Path): Directory where the downloaded file is written.
+
+    Returns:
+        Path: Filesystem path to the downloaded video file.
+    """
     video_path, _ = download_video_with_info(video_url, job_dir)
     return video_path
 
 
 def download_video_with_info(video_url: str, job_dir: Path) -> tuple[Path, dict[str, Any]]:
+    """Download a video file and return yt-dlp metadata for the download.
+
+    Args:
+        video_url (str): Source video URL accepted by yt-dlp.
+        job_dir (Path): Directory where the downloaded file is written.
+
+    Returns:
+        tuple[Path, dict[str, Any]]: Pair of the downloaded video path and the
+            sanitized yt-dlp info dict produced during extraction.
+    """
     try:
         import yt_dlp
     except ImportError as exc:
@@ -89,10 +115,27 @@ def download_video_with_info(video_url: str, job_dir: Path) -> tuple[Path, dict[
 
 
 def download_youtube_video(youtube_url: str, job_dir: Path) -> Path:
+    """Download a YouTube video into a job directory.
+
+    Args:
+        youtube_url (str): YouTube watch, shorts, or youtu.be URL.
+        job_dir (Path): Directory where the downloaded file is written.
+
+    Returns:
+        Path: Filesystem path to the downloaded video file.
+    """
     return download_video(youtube_url, job_dir)
 
 
 def find_downloaded_video(job_dir: Path) -> Path:
+    """Locate the primary downloaded video file in a job directory.
+
+    Args:
+        job_dir (Path): Directory scanned for downloaded video files.
+
+    Returns:
+        Path: Preferred merged video file when multiple candidates exist.
+    """
     videos = [
         path
         for path in job_dir.iterdir()
@@ -102,6 +145,14 @@ def find_downloaded_video(job_dir: Path) -> Path:
         raise RuntimeError("yt-dlp finished, but no downloaded video file was found.")
 
     def sort_key(path: Path) -> tuple[int, str]:
+        """Prefer merged yt-dlp outputs over separate format fragments.
+
+        Args:
+            path (Path): Candidate downloaded video file.
+
+        Returns:
+            tuple[int, str]: Sort key where merged files (no ``.f`` in the name) rank first.
+        """
         looks_merged = ".f" not in path.name
         return (0 if looks_merged else 1, path.name)
 

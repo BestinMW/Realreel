@@ -8,6 +8,15 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 
 def get_venv_python() -> Path | None:
+    """Resolve the backend virtualenv Python executable, if present.
+
+    Args:
+        None
+
+    Returns:
+        Path | None: Path to ``backend/.venv`` Python on Windows or Unix, or
+            ``None`` when the virtualenv executable does not exist.
+    """
     if os.name == "nt":
         candidate = BACKEND_ROOT / ".venv" / "Scripts" / "python.exe"
     else:
@@ -17,6 +26,14 @@ def get_venv_python() -> Path | None:
 
 @lru_cache
 def get_ffmpeg_command() -> list[str]:
+    """Resolve the ffmpeg command used by pipeline subprocesses.
+
+    Args:
+        None
+
+    Returns:
+        list[str]: Single-element argv prefix containing the ffmpeg executable path.
+    """
     env_path = os.environ.get("FFMPEG_PATH", "").strip()
     if env_path:
         return [env_path]
@@ -41,12 +58,27 @@ def get_ffmpeg_command() -> list[str]:
 
 
 def get_ffmpeg_location_for_ytdlp() -> str:
-    """yt-dlp accepts the full path to the ffmpeg binary (required for imageio's renamed exe)."""
+    """Return the ffmpeg binary path expected by yt-dlp.
+
+    Args:
+        None
+
+    Returns:
+        str: Full path to the ffmpeg executable, including imageio's renamed binary.
+    """
     return get_ffmpeg_command()[0]
 
 
 @lru_cache
 def get_ffprobe_command() -> list[str]:
+    """Resolve the ffprobe command used by metadata extraction.
+
+    Args:
+        None
+
+    Returns:
+        list[str]: Single-element argv prefix containing the ffprobe executable path.
+    """
     env_path = os.environ.get("FFPROBE_PATH", "").strip()
     if env_path:
         return [env_path]
@@ -66,6 +98,15 @@ def get_ffprobe_command() -> list[str]:
 
 
 def resolve_exiftool_path() -> str | None:
+    """Locate an exiftool executable on the system.
+
+    Args:
+        None
+
+    Returns:
+        str | None: Absolute path to exiftool when found via environment, PATH, or
+            common Windows install locations; ``None`` otherwise.
+    """
     env_path = os.environ.get("EXIFTOOL_PATH", "").strip()
     if env_path and Path(env_path).exists():
         return env_path
@@ -86,6 +127,15 @@ def resolve_exiftool_path() -> str | None:
 
 @lru_cache
 def get_ytdlp_command() -> list[str]:
+    """Resolve the yt-dlp command used by subprocess fallbacks.
+
+    Args:
+        None
+
+    Returns:
+        list[str]: argv prefix for invoking yt-dlp via explicit path, venv Python,
+            system binary, or ``python -m yt_dlp``.
+    """
     env_path = os.environ.get("YTDLP_PATH", "").strip()
     if env_path:
         return [env_path]
@@ -112,6 +162,15 @@ def get_ytdlp_command() -> list[str]:
 
 
 def resolve_tesseract_path() -> str | None:
+    """Locate a Tesseract OCR executable on the system.
+
+    Args:
+        None
+
+    Returns:
+        str | None: Absolute path to tesseract when found via environment, PATH, or
+            common Windows install locations; ``None`` otherwise.
+    """
     env_path = os.environ.get("TESSERACT_CMD", "").strip()
     if env_path and Path(env_path).exists():
         return env_path
@@ -137,6 +196,15 @@ def resolve_tesseract_path() -> str | None:
 
 
 def configure_tesseract() -> str | None:
+    """Configure pytesseract to use a resolved Tesseract executable.
+
+    Args:
+        None
+
+    Returns:
+        str | None: Absolute path assigned to ``pytesseract.pytesseract.tesseract_cmd``,
+            or ``None`` when pytesseract is unavailable or no executable is found.
+    """
     try:
         import pytesseract
     except ImportError:

@@ -240,6 +240,19 @@ def derive_ocr_indicators(
     width: float = 1,
     height: float = 1,
 ) -> dict[str, Any]:
+    """Derive OCR-based preprocessing indicators from recognized text lines.
+
+    Args:
+        lines (list[dict]): Structured OCR line entries with text, confidence, and
+            optional bounding boxes.
+        raw (str): Raw OCR text fallback when structured lines are sparse.
+        width (float): Image width used to normalize bounding-box ratios.
+        height (float): Image height used to normalize bounding-box ratios.
+
+    Returns:
+        dict[str, Any]: OCR indicator fields such as ``hasText``, ``lineCount``,
+            ``textAreaRatio``, ``likelyHeadline``, and pattern flags.
+    """
     has_text = len(lines) > 0 or bool(raw)
     joined = raw or " ".join(line["text"] for line in lines)
     top_lines = [
@@ -275,6 +288,16 @@ def derive_ocr_indicators(
 
 
 def estimate_image_size_from_lines(lines: list[dict]) -> dict[str, float]:
+    """Estimate image dimensions from OCR line bounding boxes.
+
+    Args:
+        lines (list[dict]): Structured OCR line entries that may include
+            ``boundingBox`` coordinates.
+
+    Returns:
+        dict[str, float]: ``width`` and ``height`` inferred from the largest
+            bounding-box extents, defaulting each to ``1.0`` when unknown.
+    """
     width = 0.0
     height = 0.0
     for line in lines:
@@ -287,6 +310,16 @@ def estimate_image_size_from_lines(lines: list[dict]) -> dict[str, float]:
 
 
 def normalize_vision_indicators(parsed: Any) -> dict[str, Any]:
+    """Normalize raw vision-model output into the canonical indicator schema.
+
+    Args:
+        parsed (Any): Parsed JSON object from a vision model response.
+
+    Returns:
+        dict[str, Any]: Sanitized vision indicators with bounded lists, validated
+            enums, and defaults from ``DEFAULT_VISION_INDICATORS`` when input is
+            invalid.
+    """
     if not isinstance(parsed, dict):
         return deepcopy(DEFAULT_VISION_INDICATORS)
 
@@ -368,6 +401,15 @@ def normalize_vision_indicators(parsed: Any) -> dict[str, Any]:
 
 
 def cross_modal_hints(ocr_indicators: dict, vision_indicators: dict) -> list[dict]:
+    """Detect disagreements and notable patterns across OCR and vision indicators.
+
+    Args:
+        ocr_indicators (dict): OCR-derived indicator payload.
+        vision_indicators (dict): Normalized vision-model indicator payload.
+
+    Returns:
+        list[dict]: Cross-modal hint entries with ``type`` and ``confidence`` fields.
+    """
     hints: list[dict] = []
     if not ocr_indicators or not vision_indicators:
         return hints
@@ -389,6 +431,15 @@ def cross_modal_hints(ocr_indicators: dict, vision_indicators: dict) -> list[dic
 
 
 def _normalize_synthetic_signal(value: Any) -> str | None:
+    """Map a raw synthetic-signal label to a canonical enum value.
+
+    Args:
+        value (Any): Raw signal string from a vision model response.
+
+    Returns:
+        str | None: Canonical synthetic signal name, or ``None`` when the value is
+            empty, ``"none"``, or unrecognized.
+    """
     if not isinstance(value, str):
         return None
 
@@ -403,6 +454,16 @@ def _normalize_synthetic_signal(value: Any) -> str | None:
 
 
 def format_ocr_summary(indicators: dict) -> str:
+    """Format a compact OCR indicator summary for logging or prompts.
+
+    Args:
+        indicators (dict): OCR indicator payload, typically from
+            ``derive_ocr_indicators``.
+
+    Returns:
+        str: Comma-separated summary of key OCR fields, or ``"hasText=false"`` when
+            indicators are missing.
+    """
     if not indicators:
         return "hasText=false"
     return (
@@ -413,6 +474,15 @@ def format_ocr_summary(indicators: dict) -> str:
 
 
 def seconds_to_timestamp(seconds: float | None) -> str | None:
+    """Convert elapsed seconds to an ``HH:MM:SS.mmm`` timestamp string.
+
+    Args:
+        seconds (float | None): Elapsed time in seconds, or ``None``.
+
+    Returns:
+        str | None: Zero-padded timestamp with millisecond precision, or ``None``
+            when ``seconds`` is ``None``.
+    """
     if seconds is None:
         return None
     safe_seconds = max(0.0, float(seconds))
@@ -427,6 +497,15 @@ def seconds_to_timestamp(seconds: float | None) -> str | None:
 
 
 def _normalize_context_signal(entry: Any) -> dict | None:
+    """Normalize a single vision context-signal entry.
+
+    Args:
+        entry (Any): Raw context-signal object from a vision model response.
+
+    Returns:
+        dict | None: Normalized ``type`` and ``confidence`` fields, or ``None`` when
+            the entry is not a dict.
+    """
     if not isinstance(entry, dict):
         return None
     signal_type = entry.get("type")
@@ -438,6 +517,16 @@ def _normalize_context_signal(entry: Any) -> dict | None:
 
 
 def _normalize_visible_text(entry: Any) -> dict | None:
+    """Normalize a single visible-text entry from a vision model response.
+
+    Args:
+        entry (Any): Raw visible-text object with text, kind, location, and
+            confidence fields.
+
+    Returns:
+        dict | None: Trimmed and validated visible-text fields, or ``None`` when the
+            entry is invalid or empty.
+    """
     if not isinstance(entry, dict):
         return None
 
@@ -460,12 +549,30 @@ def _normalize_visible_text(entry: Any) -> dict | None:
 
 
 def _string_items(value: Any, *, limit: int) -> list[str]:
+    """Extract trimmed non-empty strings from a list-like vision field.
+
+    Args:
+        value (Any): Raw list value from a vision model response.
+        limit (int): Maximum number of items to retain.
+
+    Returns:
+        list[str]: Trimmed string items capped at ``limit`` characters per entry.
+    """
     if not isinstance(value, list):
         return []
     return [str(item).strip()[:120] for item in value[:limit] if str(item).strip()]
 
 
 def _bbox_area(box: dict | None) -> float:
+    """Compute the area of an OCR bounding box.
+
+    Args:
+        box (dict | None): Bounding box with ``x0``, ``y0``, ``x1``, and ``y1``
+            coordinates.
+
+    Returns:
+        float: Non-negative rectangle area, or ``0.0`` when the box is missing.
+    """
     if not box:
         return 0.0
     return max(0.0, box["x1"] - box["x0"]) * max(0.0, box["y1"] - box["y0"])

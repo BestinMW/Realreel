@@ -57,6 +57,20 @@ def select_keyframes_for_analysis(
     keyframe_timestamps: list[float | None],
     limit: int,
 ) -> tuple[list[Path], list[float | None]]:
+    """Downsample keyframes to a fixed count spread evenly across the timeline.
+
+    Args:
+        keyframe_paths (list[Path]): Full list of extracted keyframe image paths.
+        keyframe_timestamps (list[float | None]): Timestamps aligned to
+            ``keyframe_paths``.
+        limit (int): Maximum number of keyframes to retain for analysis.
+
+    Returns:
+        tuple[list[Path], list[float | None]]: Selected paths and matching timestamps.
+            Returns ``([], [])`` when ``limit <= 0``; the first keyframe only when
+            ``limit == 1``; all keyframes when ``len(keyframe_paths) <= limit``;
+            otherwise evenly spaced indexes across the full keyframe list.
+    """
     if limit <= 0:
         return [], []
     if limit == 1:
@@ -110,6 +124,14 @@ def process_youtube_video(
     )
 
     def send(event: dict) -> dict:
+        """Pass through a progress or result event unchanged.
+
+        Args:
+            event (dict): Event dict to yield to the streaming consumer.
+
+        Returns:
+            dict: The same ``event`` reference.
+        """
         return event
 
     job_dir: Path | None = None

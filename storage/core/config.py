@@ -16,16 +16,7 @@ class Settings(BaseSettings):
         alias="DATABASE_URL",
         description="Async SQLAlchemy URL, e.g. postgresql+asyncpg://...",
     )
-    supabase_url: str = Field(..., alias="SUPABASE_URL")
-    supabase_service_role_key: str = Field(..., alias="SUPABASE_SERVICE_ROLE_KEY")
-
     embedding_dimension: int = Field(512, alias="EMBEDDING_DIMENSION")
-    signed_url_ttl_seconds: int = Field(900, alias="SIGNED_URL_TTL_SECONDS")
-
-    raw_videos_bucket: str = Field("raw-videos", alias="RAW_VIDEOS_BUCKET")
-    audio_bucket: str = Field("audio", alias="AUDIO_BUCKET")
-    transcripts_bucket: str = Field("transcripts", alias="TRANSCRIPTS_BUCKET")
-    thumbnails_bucket: str = Field("thumbnails", alias="THUMBNAILS_BUCKET")
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -37,6 +28,11 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
+    """Load and cache storage-layer settings from environment variables.
+
+    Returns:
+        Settings: Parsed configuration including ``DATABASE_URL`` and embedding dimension.
+    """
     return Settings()
 
 

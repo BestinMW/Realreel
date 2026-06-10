@@ -47,7 +47,15 @@ class FeedbackRequest(BaseModel):
 
 @app.get("/health")
 def health() -> dict:
-    """Check API and resolved tool paths (restart backend after code changes)."""
+    """Check API availability and resolved external tool paths.
+
+    Args:
+        None
+
+    Returns:
+        dict: ``{"ok": true, "version": "<date>", "tools": {"ffmpeg": "<path>", "yt_dlp": "<command>", "tesseract": "<path>|"missing: ..."}}``.
+        Tool entries are ``None``-free strings; missing tools use a ``"missing: ..."`` message.
+    """
     from pipeline.tools import get_ffmpeg_command, get_ytdlp_command, resolve_tesseract_path
 
     tools: dict[str, str | None] = {}
@@ -84,6 +92,15 @@ async def process_youtube(payload: ProcessRequest, request: Request) -> Streamin
         download failure, invalid URL). Streaming stops if the client disconnects.
     """
     async def event_stream() -> AsyncGenerator[bytes, None]:
+        """Yield NDJSON-encoded pipeline events until completion or client disconnect.
+
+        Args:
+            None
+
+        Returns:
+            AsyncGenerator[bytes, None]: UTF-8 encoded lines from ``process_youtube_video``;
+            iteration stops when the generator exhausts or the client disconnects.
+        """
         url = payload.videoUrl or payload.youtubeUrl or ""
         for event in process_youtube_video(
             url,

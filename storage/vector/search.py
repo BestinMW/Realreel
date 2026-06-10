@@ -10,6 +10,15 @@ from storage.core.config import settings
 
 
 def validate_embedding(embedding: list[float]) -> None:
+    """Verify that an embedding vector matches the configured pgvector dimension.
+
+    Args:
+        embedding (list[float]): Whole-video embedding vector.
+
+    Returns:
+        None: When the length equals ``settings.embedding_dimension``. Raises ``ValueError``
+        when the dimension does not match.
+    """
     if len(embedding) != settings.embedding_dimension:
         raise ValueError(
             f"Expected embedding dimension {settings.embedding_dimension}, "
@@ -26,7 +35,21 @@ async def find_similar_videos(
     exclude_video_id: uuid.UUID | None = None,
     exclude_original_url: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Find previously analyzed videos similar to a new whole-video embedding."""
+    """Find previously analyzed videos similar to a new whole-video embedding.
+
+    Args:
+        session (AsyncSession): Active SQLAlchemy async database session.
+        embedding (list[float]): Whole-video embedding used for cosine-distance search.
+        limit (int): Maximum number of matches to return.
+        max_cosine_distance (float): Maximum pgvector cosine distance for a candidate match.
+        exclude_video_id (uuid.UUID | None): Saved video id to omit from results.
+        exclude_original_url (str | None): Submission URL to omit from results.
+
+    Returns:
+        list[dict[str, Any]]: Ranked match rows with ``id``, ``original_url``, ``similarity``,
+        ``distance``, and related metadata. Returns an empty list when no embeddings fall
+        within the threshold (repost assessment then reports no similar videos).
+    """
     validate_embedding(embedding)
 
     query = """

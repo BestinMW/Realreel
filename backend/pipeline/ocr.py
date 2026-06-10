@@ -15,6 +15,15 @@ except ImportError:
 
 
 def empty_ocr_result(error: str | None = None) -> dict:
+    """Build a standardized OCR result with no recognized text.
+
+    Args:
+        error (str | None): Optional error message; when set, ``ok`` is ``False``.
+
+    Returns:
+        dict: OCR payload with ``ok``, ``text`` (empty ``raw``/``lines``/``wordCount``),
+            ``indicators``, ``confidence`` (``None``), and ``error``.
+    """
     lines: list[dict] = []
     return {
         "ok": error is None,
@@ -26,6 +35,17 @@ def empty_ocr_result(error: str | None = None) -> dict:
 
 
 def analyze_frame(frame_path: Path) -> dict:
+    """Run Tesseract OCR on a single frame image and derive text indicators.
+
+    Args:
+        frame_path (Path): Path to the frame image file.
+
+    Returns:
+        dict: On success, ``ok`` is ``True`` with ``text``, ``indicators``,
+            ``confidence``, and ``error`` set to ``None``. On failure or when OCR is
+            disabled or unavailable, returns ``empty_ocr_result`` with ``ok`` False
+            and an explanatory ``error`` string.
+    """
     if not OCR_ENABLED:
         return empty_ocr_result("OCR disabled by ENABLE_KEYFRAME_OCR=false.")
 
@@ -77,6 +97,15 @@ def analyze_frame(frame_path: Path) -> dict:
 
 
 def _collect_lines(data: dict) -> list[dict]:
+    """Group Tesseract word boxes into sorted OCR lines above the confidence threshold.
+
+    Args:
+        data (dict): Tesseract ``image_to_data`` dictionary output.
+
+    Returns:
+        list[dict]: Lines sorted top-to-bottom then left-to-right, each with
+            ``text``, ``confidence``, and ``boundingBox`` keys.
+    """
     line_map: dict[tuple[int, int, int], dict] = {}
 
     count = len(data.get("text", []))
@@ -124,4 +153,12 @@ def _collect_lines(data: dict) -> list[dict]:
 
 
 def _build_raw_text(lines: list[dict]) -> str:
+    """Join OCR line texts into a single multiline string.
+
+    Args:
+        lines (list[dict]): OCR line dicts with a ``text`` field.
+
+    Returns:
+        str: Newline-joined line text with leading/trailing whitespace removed.
+    """
     return "\n".join(line["text"] for line in lines).strip()

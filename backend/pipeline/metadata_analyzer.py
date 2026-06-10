@@ -78,6 +78,14 @@ class RuleResult:
     reason: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize this rule outcome to a plain dict.
+
+        Args:
+            None.
+
+        Returns:
+            dict[str, Any]: ``flagged``, ``score``, and optional ``reason`` keys.
+        """
         return asdict(self)
 
 
@@ -94,6 +102,15 @@ class MetadataAnalyzer:
     """Rule-based analysis over platform, file, and embedded video metadata."""
 
     def __init__(self, url: str, video_path: Path | str) -> None:
+        """Bind a source URL and local video file for metadata analysis.
+
+        Args:
+            url: Platform URL used to fetch platform-side metadata.
+            video_path: Local path to the downloaded video file.
+
+        Returns:
+            None.
+        """
         self.url = url.strip()
         self.video_path = Path(video_path)
 
@@ -102,10 +119,15 @@ class MetadataAnalyzer:
         transcript_text: str | None = None,
         repost_match_date: str | None = None,
     ) -> dict[str, Any]:
-        """
-        Collect metadata and evaluate misinformation / repost heuristics.
+        """Collect metadata and evaluate misinformation / repost heuristics.
 
-        Returns a JSON-serializable dict with metadata_score, reasons, and rule_results.
+        Args:
+            transcript_text: Optional transcript used for recency and claimed-source rules.
+            repost_match_date: Optional earlier-match date string for repost-age comparison.
+
+        Returns:
+            dict[str, Any]: JSON-serializable payload with ``metadata_score``, ``reasons``,
+                ``rule_results``, and ``collection_errors``.
         """
         collected = self._collect_metadata()
         transcript = (transcript_text or "").strip().lower()
@@ -144,6 +166,14 @@ class MetadataAnalyzer:
         }
 
     def _collect_metadata(self) -> CollectedMetadata:
+        """Fetch platform, file, and embedded metadata for the bound video.
+
+        Args:
+            None.
+
+        Returns:
+            CollectedMetadata: Aggregated metadata plus any per-source collection errors.
+        """
         errors: list[str] = []
         platform: dict[str, Any] = {}
         video: dict[str, Any] = {}
@@ -179,6 +209,15 @@ class MetadataAnalyzer:
     def _rule_creation_date_conflict(
         self, transcript: str, collected: CollectedMetadata
     ) -> RuleResult:
+        """Flag when recency language conflicts with an old embedded creation date.
+
+        Args:
+            transcript: Lowercased transcript text to scan for recency phrases.
+            collected: Metadata bundle from ``_collect_metadata``.
+
+        Returns:
+            RuleResult: Flagged when creation date is more than 30 days before today.
+        """
         if not self._transcript_matches_any(transcript, RECENCY_PHRASES):
             return RuleResult(flagged=False, score=0.0)
 
@@ -196,6 +235,14 @@ class MetadataAnalyzer:
         return RuleResult(flagged=False, score=0.0)
 
     def _rule_reencoded_edited(self, collected: CollectedMetadata) -> RuleResult:
+        """Flag when encoder metadata indicates editing or re-encoding software.
+
+        Args:
+            collected: Metadata bundle from ``_collect_metadata``.
+
+        Returns:
+            RuleResult: Flagged when the encoder matches known editing markers.
+        """
         encoder_value = self._extract_encoder(collected)
         if encoder_value and self._contains_editing_marker(encoder_value):
             return RuleResult(
@@ -206,6 +253,14 @@ class MetadataAnalyzer:
         return RuleResult(flagged=False, score=0.0)
 
     def _rule_missing_metadata(self, collected: CollectedMetadata) -> RuleResult:
+        """Flag when most core provenance fields are absent from metadata.
+
+        Args:
+            collected: Metadata bundle from ``_collect_metadata``.
+
+        Returns:
+            RuleResult: Flagged when at least three of four key fields are missing.
+        """
         missing_count = sum(
             1
             for value in (
@@ -229,6 +284,15 @@ class MetadataAnalyzer:
         collected: CollectedMetadata,
         repost_match_date: str | None,
     ) -> RuleResult:
+        """Flag when platform upload date is much later than a matched earlier repost.
+
+        Args:
+            collected: Metadata bundle from ``_collect_metadata``.
+            repost_match_date: Date string for the earlier similar upload, if known.
+
+        Returns:
+            RuleResult: Flagged when upload is more than 180 days after the match date.
+        """
         if not repost_match_date:
             return RuleResult(flagged=False, score=0.0)
 
@@ -248,6 +312,15 @@ class MetadataAnalyzer:
     def _rule_metadata_vs_claimed_source(
         self, transcript: str, collected: CollectedMetadata
     ) -> RuleResult:
+        """Flag when claimed raw-source language conflicts with technical metadata.
+
+        Args:
+            transcript: Lowercased transcript text to scan for claimed-source phrases.
+            collected: Metadata bundle from ``_collect_metadata``.
+
+        Returns:
+            RuleResult: Flagged when FPS or encoder suggests non-raw capture.
+        """
         if not self._transcript_matches_any(transcript, CLAIMED_SOURCE_PHRASES):
             return RuleResult(flagged=False, score=0.0)
 
@@ -268,7 +341,14 @@ class MetadataAnalyzer:
 
     @staticmethod
     def parse_date(value: str | int | float | None) -> datetime | None:
-        """Parse common metadata date formats into a timezone-aware datetime."""
+        """Parse common metadata date formats into a timezone-aware datetime.
+
+        Args:
+            value: Timestamp, date string, or ``None`` from metadata fields.
+
+        Returns:
+            datetime | None: Parsed UTC-aware datetime, or ``None`` when unparseable.
+        """
         if value is None:
             return None
 
@@ -321,6 +401,14 @@ class MetadataAnalyzer:
         return None
 
     def _extract_platform_upload_date(self, platform: dict[str, Any]) -> date | None:
+        """Resolve the platform upload or release date from platform metadata.
+
+        Args:
+            platform: Platform metadata dict from ``get_platform_metadata``.
+
+        Returns:
+            date | None: Upload date when a known field parses successfully.
+        """
         for key in ("upload_date", "release_date", "timestamp"):
             parsed = self.parse_date(platform.get(key))
             if parsed is not None:
@@ -328,6 +416,14 @@ class MetadataAnalyzer:
         return None
 
     def _extract_creation_date(self, collected: CollectedMetadata) -> datetime | None:
+        """Extract the earliest embedded or container creation timestamp.
+
+        Args:
+            collected: Metadata bundle from ``_collect_metadata``.
+
+        Returns:
+            datetime | None: Parsed creation datetime, or ``None`` when not found.
+        """
         for key, value in collected.embedded_tags.items():
             normalized_key = self._normalize_key(key)
             if any(marker in normalized_key for marker in CREATION_DATE_KEYS):
@@ -344,12 +440,28 @@ class MetadataAnalyzer:
         return None
 
     def _extract_creation_time_field(self, collected: CollectedMetadata) -> str | None:
+        """Return a string creation-time value for missing-metadata checks.
+
+        Args:
+            collected: Metadata bundle from ``_collect_metadata``.
+
+        Returns:
+            str | None: ISO creation time or raw tag value, or ``None`` when absent.
+        """
         value = self._extract_creation_date(collected)
         if value is not None:
             return value.isoformat()
         return self._find_tag_value(collected, CREATION_DATE_KEYS)
 
     def _extract_encoder(self, collected: CollectedMetadata) -> str | None:
+        """Resolve encoder or compressor metadata from embedded and format tags.
+
+        Args:
+            collected: Metadata bundle from ``_collect_metadata``.
+
+        Returns:
+            str | None: Encoder name string, or ``None`` when not present.
+        """
         encoder = self._find_tag_value(collected, ENCODER_KEYS)
         if encoder:
             return encoder
@@ -363,9 +475,25 @@ class MetadataAnalyzer:
         return None
 
     def _extract_software(self, collected: CollectedMetadata) -> str | None:
+        """Resolve editing or capture software from embedded metadata tags.
+
+        Args:
+            collected: Metadata bundle from ``_collect_metadata``.
+
+        Returns:
+            str | None: Software or creator-tool string, or ``None`` when absent.
+        """
         return self._find_tag_value(collected, SOFTWARE_KEYS)
 
     def _extract_device_model(self, collected: CollectedMetadata) -> str | None:
+        """Resolve camera or device model from embedded metadata tags.
+
+        Args:
+            collected: Metadata bundle from ``_collect_metadata``.
+
+        Returns:
+            str | None: Device model string, combined make/model, or ``None``.
+        """
         device = self._find_tag_value(collected, DEVICE_MODEL_KEYS)
         if device:
             return device
@@ -377,6 +505,14 @@ class MetadataAnalyzer:
         return make or model
 
     def _extract_video_fps(self, video: dict[str, Any]) -> float | None:
+        """Read the frame rate from the primary video stream in probe output.
+
+        Args:
+            video: FFprobe-style video metadata dict from ``get_video_metadata``.
+
+        Returns:
+            float | None: Positive FPS value, or ``None`` when unavailable.
+        """
         streams = video.get("streams") or []
         video_stream = next(
             (stream for stream in streams if stream.get("codec_type") == "video"),
@@ -393,6 +529,14 @@ class MetadataAnalyzer:
 
     @staticmethod
     def _parse_fraction(value: Any) -> float | None:
+        """Parse a numeric string or fractional rate such as ``30000/1001``.
+
+        Args:
+            value: Frame-rate field value from stream metadata.
+
+        Returns:
+            float | None: Parsed numeric rate, or ``None`` when invalid.
+        """
         if value is None:
             return None
         text = str(value).strip()
@@ -415,6 +559,15 @@ class MetadataAnalyzer:
     def _find_tag_value(
         self, collected: CollectedMetadata, key_markers: tuple[str, ...]
     ) -> str | None:
+        """Find the first embedded tag whose normalized key contains a marker.
+
+        Args:
+            collected: Metadata bundle from ``_collect_metadata``.
+            key_markers: Normalized substrings to match against tag keys.
+
+        Returns:
+            str | None: First non-empty scalar tag value, or ``None``.
+        """
         for key, value in collected.embedded_tags.items():
             normalized_key = self._normalize_key(key)
             if any(marker in normalized_key for marker in key_markers):
@@ -428,15 +581,40 @@ class MetadataAnalyzer:
 
     @staticmethod
     def _normalize_key(key: str) -> str:
+        """Normalize a metadata tag key for case- and punctuation-insensitive lookup.
+
+        Args:
+            key: Raw metadata tag key.
+
+        Returns:
+            str: Lowercased alphanumeric-only key.
+        """
         return re.sub(r"[^a-z0-9]", "", key.lower())
 
     @staticmethod
     def _contains_editing_marker(encoder_value: str) -> bool:
+        """Check whether an encoder string names known editing or transcode tools.
+
+        Args:
+            encoder_value: Encoder or compressor metadata string.
+
+        Returns:
+            bool: ``True`` when a known editing marker appears in the value.
+        """
         lowered = encoder_value.lower()
         return any(marker in lowered for marker in EDITING_ENCODER_MARKERS)
 
     @staticmethod
     def _transcript_matches_any(transcript: str, patterns: tuple[str, ...]) -> bool:
+        """Test whether any regex pattern matches the transcript text.
+
+        Args:
+            transcript: Lowercased transcript text to search.
+            patterns: Case-insensitive regex patterns to test.
+
+        Returns:
+            bool: ``True`` when at least one pattern matches.
+        """
         if not transcript:
             return False
         return any(re.search(pattern, transcript, re.IGNORECASE) for pattern in patterns)

@@ -15,7 +15,22 @@ def assess_repost_history(
     original_url: str,
     download_info: dict,
 ) -> tuple[dict, str | None, dict, float | None]:
-    """Run repost assessment through the storage layer when enabled."""
+    """Run repost assessment through the storage layer when enabled.
+
+    Args:
+        file_sha256 (str): SHA-256 hash of the downloaded video for exact-match lookup.
+        original_url (str): Canonical source URL for the current upload.
+        download_info (dict): yt-dlp metadata (uploader, upload date) for context.
+
+    Returns:
+        tuple[dict, str | None, dict, float | None]: ``(assessment, repost_match_date,
+        json_safe_result, repost_risk_score)``. When ``DATABASE_URL`` is missing or
+        repost assessment is disabled, ``json_safe_result`` includes
+        ``{"isRepost": false, "repostProbability": null, "matches": [], "skipped": true,
+        "rationale": "..."}`` and ``repost_risk_score`` is ``None``. On success,
+        ``json_safe_result`` includes ``isRepost``, ``repostProbability``, ``matches``,
+        and ``rationale`` for duplicate or similar prior uploads.
+    """
     if not REPOST_ASSESSMENT_ENABLED:
         skipped = {
             "isRepost": False,

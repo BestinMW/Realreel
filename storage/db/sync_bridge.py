@@ -61,6 +61,14 @@ async def _init_bridge() -> None:
 
 
 async def bridge_session() -> AsyncGenerator[AsyncSession, None]:
+    """Yield one async database session for synchronous pipeline callers.
+
+    Returns:
+        AsyncGenerator[AsyncSession, None]: A single scoped SQLAlchemy session backed by the
+        shared bridge engine. Yields nothing when ``DATABASE_URL`` cannot be initialized,
+        causing callers such as ``persist_db_video_sync`` and ``run_repost_assessment_sync``
+        to report skipped or failed persistence gracefully.
+    """
     await _init_bridge()
     assert _session_factory is not None
     async with _session_factory() as session:
@@ -68,7 +76,18 @@ async def bridge_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 def run_db_coroutine(coro: Coroutine[Any, Any, T]) -> T:
-    """Run async database work on a dedicated background event loop."""
+    """Run async database work on a dedicated background event loop.
+
+    Args:
+        coro (Coroutine[Any, Any, T]): Awaitable database operation to execute on the bridge
+            loop (for example ``_persist_db_video_async`` or ``_save_feedback_async``).
+
+    Returns:
+        T: The coroutine result on success. Raises when the bridge cannot initialize or the
+        coroutine fails; synchronous wrappers convert failures to
+        ``{"ok": False, "videoId": None, "error": "<message>"}`` or
+        ``{"status": "storage_error", "message": "unable to save to storage"}``.
+    """
     loop = _ensure_loop()
     asyncio.run_coroutine_threadsafe(_init_bridge(), loop).result()
     return asyncio.run_coroutine_threadsafe(coro, loop).result()

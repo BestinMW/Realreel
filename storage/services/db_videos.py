@@ -35,6 +35,22 @@ def compute_overall_risk_score(
     thumbnail_clickbait_score: Any = None,
     repost_risk: Any = None,
 ) -> float:
+    """Compute the maximum normalized risk score across available analysis signals.
+
+    Args:
+        misleading_probability (Any): Misinformation risk in 0.0–1.0, or a non-numeric value
+            to ignore.
+        visual_authenticity_risk (Any): AI-likelihood risk in 0.0–1.0, or a non-numeric value
+            to ignore.
+        thumbnail_clickbait_score (Any): Thumbnail clickbait risk in 0.0–1.0, or a non-numeric
+            value to ignore.
+        repost_risk (Any): Repost risk in 0.0–1.0, or a non-numeric value to ignore.
+
+    Returns:
+        float: ``max`` of the provided risk scores clamped to 0.0–1.0, or ``0.0`` when no
+        valid scores are present. Used as ``overall_risk_score`` in the Functionality 3
+        persistence payload.
+    """
     risks = [
         score
         for score in (

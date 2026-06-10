@@ -23,6 +23,16 @@ class VideoPostContext(NamedTuple):
 
 
 def parse_platform_upload_date(value: Any) -> date | None:
+    """Normalize a platform publish date from common pipeline and database formats.
+
+    Args:
+        value (Any): ``YYYYMMDD`` string, ISO date/datetime string, ``date``, ``datetime``,
+            or empty/invalid input.
+
+    Returns:
+        date | None: Parsed calendar date, or ``None`` when the value is missing or cannot
+        be parsed. Used for repost timing rules and ``platform_upload_date`` on saved rows.
+    """
     if not value:
         return None
     if isinstance(value, datetime):
@@ -188,11 +198,13 @@ async def assess_repost_risk(
         upload_date (str | date | datetime | None): Platform publish date for repost rules.
 
     Returns:
-        dict[str, Any]: Assessment with ``isRepost``, ``repostProbability``, ``matches``,
-        and ``rationale`` for the streamed ``complete`` result (``repostRisk``,
-        ``repostMatches``, ``repostRationale``). When no prior records exist, repost risk
-        remains low or unknown. When ``DATABASE_URL`` is disabled, callers receive a
-        skipped assessment instead of raising.
+        dict[str, Any]: Repost assessment for the streamed ``complete`` result
+        (``isRepost``, ``repostRisk``, ``repostMatches``, ``repostRationale``). On a normal
+        comparison, returns ``isRepost``, ``repostProbability``, ``matches``, and
+        ``rationale``. When no embedding is available, ``repostProbability`` may be ``None``.
+        When no prior records match, ``repostProbability`` is ``0.0000`` or ``None`` with an
+        explanatory ``rationale``. This function does not set ``skipped``; database failures
+        are handled by ``run_repost_assessment_sync``.
     """
     current = VideoPostContext(
         original_url, uploader_handle, parse_platform_upload_date(upload_date)
@@ -284,10 +296,12 @@ def run_repost_assessment_sync(
         upload_date (str | date | datetime | None): Platform publish date for repost rules.
 
     Returns:
-        dict[str, Any]: Repost assessment with ``isRepost``, ``repostProbability``,
-        ``matches``, and ``rationale`` for inclusion in the streamed ``complete`` result.
-        On database failure, returns a skipped assessment with ``skipped: True`` and
-        ``skipReason`` (repost history unavailable when ``DATABASE_URL`` is missing).
+        dict[str, Any]: On success, the same assessment contract as ``assess_repost_risk``
+        (``isRepost``, ``repostProbability``, ``matches``, ``rationale``). When
+        ``DATABASE_URL`` is missing or the database bridge fails, returns a skipped
+        assessment with ``skipped: True``, ``skipReason`` set to the failure reason,
+        ``isRepost: False``, ``repostProbability: None``, and ``matches: []`` (repost history
+        unavailable without blocking user-facing analysis).
     """
     async def _run() -> dict[str, Any]:
         from storage.db.sync_bridge import bridge_session
@@ -317,6 +331,18 @@ def run_repost_assessment_sync(
 
 
 def repost_risk_score(assessment: dict[str, Any]) -> float | None:
+    """Map a repost assessment dict to a single pipeline repost risk score.
+
+    Args:
+        assessment (dict[str, Any]): Output from ``assess_repost_risk`` or
+            ``run_repost_assessment_sync``.
+
+    Returns:
+        float | None: Repost risk in 0.0–1.0 for the streamed ``repostRisk`` field.
+        Returns ``None`` when the assessment was skipped or represents a clean no-match result
+        (``repostProbability`` of ``0.0000`` with ``isRepost: False``). Confirmed reposts are
+        floored at ``0.65``.
+    """
     if assessment.get("skipped"):
         return None
     probability = assessment.get("repostProbability")
@@ -329,6 +355,16 @@ def repost_risk_score(assessment: dict[str, Any]) -> float | None:
 
 
 def extract_repost_match_date(assessment: dict[str, Any]) -> str | None:
+    """Read the closest matched video publish date from a repost assessment.
+
+    Args:
+        assessment (dict[str, Any]): Output from ``assess_repost_risk`` or
+            ``run_repost_assessment_sync``.
+
+    Returns:
+        str | None: Matched ``platformUploadDate`` normalized to ``YYYYMMDD``, or ``None``
+        when there are no matches or the date cannot be parsed.
+    """
     matches = assessment.get("matches") or []
     if not matches:
         return None
@@ -340,6 +376,18 @@ def apply_repost_assessment_to_payload(
     payload_data: dict[str, Any],
     assessment: dict[str, Any],
 ) -> dict[str, Any]:
+    """Merge a repost assessment into a ``VideoCreate``-style persistence payload.
+
+    Args:
+        payload_data (dict[str, Any]): Mutable row fields (scores, ``reasons``, etc.).
+        assessment (dict[str, Any]): Repost assessment with ``isRepost``,
+            ``repostProbability``, ``matches``, and ``rationale``.
+
+    Returns:
+        dict[str, Any]: The updated payload. Elevates ``repost_probability``,
+        ``misleading_context_score``, and ``overall_risk_score`` when the assessment confirms
+        a repost; attaches JSON-safe repost details under ``reasons["repost"]``.
+    """
     repost_probability = assessment.get("repostProbability")
     if repost_probability is not None:
         payload_data["repost_probability"] = max(
@@ -404,6 +452,16 @@ async def _find_exact_hash_match(
 
 
 def json_safe_assessment(assessment: dict[str, Any]) -> dict[str, Any]:
+    """Convert repost assessment values to JSON-serializable types.
+
+    Args:
+        assessment (dict[str, Any]): Repost assessment dict that may contain ``Decimal``
+            probability values.
+
+    Returns:
+        dict[str, Any]: A shallow copy of ``assessment`` with ``repostProbability`` converted
+        to ``float`` when present.
+    """
     safe = dict(assessment)
     if isinstance(safe.get("repostProbability"), Decimal):
         safe["repostProbability"] = float(safe["repostProbability"])

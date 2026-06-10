@@ -7,6 +7,14 @@ from .config import OPENAI_AUDIO_FILE_LIMIT_BYTES, OPENAI_TRANSCRIPTION_MODEL
 
 
 def transcribe_audio_with_openai(audio_path: Path) -> dict:
+    """Transcribe an audio file with the OpenAI Audio Transcriptions API.
+
+    Args:
+        audio_path (Path): Path to a WAV audio file within OpenAI's upload size limit.
+
+    Returns:
+        dict: OpenAI verbose JSON transcription payload, including text and timing fields.
+    """
     api_key = os.environ.get("OPENAI_API_KEY", "")
     if not api_key:
         raise RuntimeError(
