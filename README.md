@@ -9,6 +9,7 @@ Realreel/
   frontend/          Next.js UI
   backend/           FastAPI video processor
   storage/           Postgres + Supabase Storage layer (used by the backend)
+  tests/             backend/, storage/, and frontend/ test suites
   scripts/           start-backend.ps1, start-frontend.ps1, run_tests.py, check-deps.ps1
 ```
 
@@ -56,10 +57,10 @@ Unit tests:
 python scripts/run_tests.py
 ```
 
-This discovers `backend/tests` and `storage/tests`. Storage integration smoke test (requires real `DATABASE_URL`):
+This discovers `tests/backend`, `tests/storage`, and `tests/frontend`. Storage integration smoke test (requires real `DATABASE_URL`):
 
 ```bash
-python storage/tests/smoke_test.py
+python tests/storage/smoke_test.py
 ```
 
 ## Reliability score (UI)

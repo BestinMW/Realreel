@@ -177,7 +177,7 @@ From repo root:
 python scripts/run_tests.py
 ```
 
-Backend tests live in `backend/tests/` (URL parsing, indicators, claim analysis, metadata rules, frame sampling, DB payload mapping, repost helpers).
+Backend tests live in `tests/backend/` (URL parsing, indicators, claim analysis, metadata rules, frame sampling, repost helpers).
 
 ## Layout
 
@@ -200,5 +200,6 @@ backend/
     indicators.py              Shared normalization helpers
     storage.py                 Supabase Storage uploads
     config.py                  Env flags and bucket names
-  tests/                       Unit tests
 ```
+
+Unit tests for the backend live in `tests/backend/` at the repo root.

@@ -57,7 +57,7 @@ async def main() -> None:
         credibility_score=Decimal("0.9000"),
         overall_risk_score=Decimal("0.2500"),
         confidence=Decimal("0.9500"),
-        reasons={"summary": "Smoke test row created by storage/tests/smoke_test.py"},
+        reasons={"summary": "Smoke test row created by tests/storage/smoke_test.py"},
     )
 
     async with AsyncSessionLocal() as session:

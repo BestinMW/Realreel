@@ -74,13 +74,11 @@ storage/
     supabase.py              Upload, signed URL, delete (optional Python client)
   schemas/contracts.py       Pydantic `VideoCreate`, `VideoRead`, etc.
   api/routes.py              Optional REST router (not mounted by default backend)
-  tests/
-    test_pipeline_units.py   Schema/path validation unit tests
-    test_storage_reposts.py  Repost scoring unit tests
-    smoke_test.py            Live DB integration script
   requirements.txt
   requirements-assets.txt  Optional Supabase Python client deps
 ```
+
+Storage tests live in `tests/storage/` at the repo root (`test_pipeline_units.py`, `test_storage_reposts.py`, `test_db_videos.py`, `smoke_test.py`).
 
 ## Supabase setup
 
@@ -158,13 +156,13 @@ python scripts/run_tests.py
 Storage-specific tests only:
 
 ```bash
-python -m unittest discover storage/tests -t .
+python -m unittest discover tests/storage -t .
 ```
 
 Live integration (creates and deletes one test row; requires valid `DATABASE_URL`):
 
 ```bash
-python storage/tests/smoke_test.py
+python tests/storage/smoke_test.py
 ```
 
 ## Optional FastAPI router

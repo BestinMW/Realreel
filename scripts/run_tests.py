@@ -56,7 +56,7 @@ def _split_camel_case(value: str) -> str:
 def _discover_tests(project_root: Path) -> unittest.TestSuite:
     loader = unittest.defaultTestLoader
     suite = unittest.TestSuite()
-    for relative_dir in ("backend/tests", "storage/tests", "frontend/tests"):
+    for relative_dir in ("tests/backend", "tests/storage", "tests/frontend"):
         test_dir = project_root / relative_dir
         if test_dir.is_dir():
             suite.addTests(loader.discover(str(test_dir), top_level_dir=str(project_root)))

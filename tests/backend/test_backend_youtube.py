@@ -3,9 +3,12 @@ import unittest
 from pathlib import Path
 
 
-BACKEND_ROOT = Path(__file__).resolve().parents[1]
-if str(BACKEND_ROOT) not in sys.path:
-    sys.path.insert(0, str(BACKEND_ROOT))
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+BACKEND_ROOT = PROJECT_ROOT / "backend"
+for path in (PROJECT_ROOT, BACKEND_ROOT):
+    path_str = str(path)
+    if path_str not in sys.path:
+        sys.path.insert(0, path_str)
 
 from pipeline.youtube import parse_video_url, parse_youtube_url, safe_segment  # noqa: E402
 
