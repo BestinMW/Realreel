@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 type PreviewSource =
@@ -342,9 +341,6 @@ export default function Home() {
       <section className="userPanel" aria-live="polite">
         <div className="brandRow">
           <p className="eyebrow">RealReel</p>
-          <Link className="debugLink" href="/debug">
-            Debug
-          </Link>
         </div>
 
         <h1>Is it real?</h1>
