@@ -174,6 +174,26 @@ def process_youtube_video(
     *,
     fast_processing_mode: bool | None = None,
 ) -> Generator[dict, None, None]:
+    """Download a video URL, run the analysis pipeline, and yield streamed progress events.
+
+    Args:
+        video_url (str): Full video URL (YouTube, TikTok, Instagram, Vimeo, or direct link).
+        fast_processing_mode (bool | None): When ``True``, skip visual events, metadata
+            rules, thumbnail clickbait, and raw video upload. When ``None``, uses the
+            ``FAST_PROCESSING_MODE`` environment default.
+
+    Returns:
+        Generator[dict, None, None]: Yields NDJSON-style event dicts. Progress events:
+        ``{"type": "progress", "progress": <int>, "stage": "<label>"}``. Final success:
+        ``{"type": "complete", "progress": 100, "stage": "Complete", "result": {...}}``
+        where ``result`` includes ``misleadingProbability``, ``visualAuthenticityRisk``,
+        ``claimVerdict``, ``claimSummary``, repost fields (``isRepost``, ``repostRisk``,
+        ``repostMatches``), artifact paths (``rawVideoPath``, ``transcriptPath``, etc.),
+        and ``databaseSaveOk`` / ``databaseVideoId``. Failures:
+        ``{"type": "error", "message": "<reason>"}`` (e.g. invalid URL, download failure).
+        Partial analysis may set ``claimVerdict`` to ``no_clear_claim`` and
+        ``databaseSaveOk`` to ``False`` without aborting the stream.
+    """
     use_fast_processing_mode = (
         FAST_PROCESSING_MODE if fast_processing_mode is None else fast_processing_mode
     )

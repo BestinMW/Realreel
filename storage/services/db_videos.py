@@ -65,7 +65,30 @@ def build_db_video_payload(
     repost_risk: float | None,
     analysis_paths: dict[str, str | None],
 ) -> VideoCreate:
-    """Map a completed analysis run into one Postgres videos-table row."""
+    """Map a completed analysis run into a ``VideoCreate`` payload for Postgres.
+
+    Args:
+        original_url (str): Submitted video URL.
+        platform (str): Platform slug (e.g. ``youtube``, ``tiktok``).
+        file_sha256 (str): SHA-256 hash of the downloaded video file.
+        download_info (dict[str, Any]): yt-dlp metadata (title, duration, upload_date, etc.).
+        transcript_text (str | None): Truncated transcript excerpt.
+        raw_video_path (str | None): Supabase path for the raw video artifact.
+        thumbnail_path (str | None): Supabase path for the thumbnail artifact.
+        transcript_path (str | None): Supabase path for the transcript JSON artifact.
+        claim_analysis (dict[str, Any]): Claim and risk fields from the engine.
+        thumbnail_clickbait_analysis (dict[str, Any]): Thumbnail clickbait analysis output.
+        metadata_analysis (dict[str, Any]): Metadata rule analysis output.
+        repost_result (dict[str, Any]): Repost assessment from storage.
+        repost_risk (float | None): Computed repost risk score, if available.
+        analysis_paths (dict[str, str | None]): Storage paths for analysis JSON artifacts.
+
+    Returns:
+        VideoCreate: Pydantic payload with scores (``ai_generated_score``,
+        ``misleading_context_score``, ``repost_probability``, ``overall_risk_score``,
+        ``credibility_score``, ``confidence``) and a ``reasons`` JSON object suitable
+        for ``persist_analyzed_video`` / ``persist_db_video_sync``.
+    """
     misleading = _risk(claim_analysis.get("misleadingProbability")) or 0.0
     visual = _risk(claim_analysis.get("visualAuthenticityRisk")) or 0.0
     thumbnail = _risk(thumbnail_clickbait_analysis.get("clickbaitScore"))
@@ -135,7 +158,19 @@ def build_db_video_payload(
 
 
 def persist_db_video_sync(payload: VideoCreate) -> dict[str, Any]:
-    """Insert or update one row in the Postgres videos table."""
+    """Insert or update one row in ``public.videos`` from a completed analysis payload.
+
+    Args:
+        payload (VideoCreate): Completed analysis row (``original_url``, ``file_sha256``,
+            risk scores, ``reasons``, artifact paths, etc.).
+
+    Returns:
+        dict[str, Any]: On success,
+        ``{"ok": True, "videoId": "<uuid>", "error": None}``. On failure,
+        ``{"ok": False, "videoId": None, "error": "<message>"}`` (storage unavailable,
+        connection error, or missing ``DATABASE_URL``). Does not raise when the database
+        is disabled; callers surface ``databaseSaveOk: false`` in the streamed result.
+    """
     try:
         return run_db_coroutine(_persist_db_video_async(payload))
     except Exception as exc:
@@ -147,6 +182,16 @@ def persist_db_video_sync(payload: VideoCreate) -> dict[str, Any]:
 
 
 async def _persist_db_video_async(payload: VideoCreate) -> dict[str, Any]:
+    """Persist one ``VideoCreate`` row inside a bridge database session.
+
+    Args:
+        payload (VideoCreate): Completed analysis row to upsert.
+
+    Returns:
+        dict[str, Any]: On success,
+        ``{"ok": True, "videoId": "<uuid>", "error": None}``. Raises
+        ``RuntimeError`` when no database session is available.
+    """
     from storage.db.sync_bridge import bridge_session
     from storage.services.videos import persist_analyzed_video
 

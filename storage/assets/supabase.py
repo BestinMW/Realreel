@@ -37,6 +37,20 @@ class SupabaseStorageService:
         upsert: bool = False,
         content_type: str | None = None,
     ) -> str:
+        """Upload a local file to Supabase Storage (``storage_service.upload`` contract).
+
+        Args:
+            bucket (StorageBucket): Target storage bucket enum member.
+            storage_path (str): Object path within the bucket.
+            local_path (str | Path): Local file to upload.
+            upsert (bool): When ``True``, replace an existing object at ``storage_path``.
+            content_type (str | None): MIME type; inferred from the file extension when omitted.
+
+        Returns:
+            str: The ``storage_path`` of the uploaded object on success. Raises on missing
+            Supabase credentials or upload failure (artifact paths may be absent in the
+            streamed analysis result when uploads are skipped).
+        """
         return await asyncio.to_thread(
             self._upload_file_sync,
             bucket,

@@ -66,6 +66,23 @@ def health() -> dict:
 
 @app.post("/process-youtube")
 async def process_youtube(payload: ProcessRequest, request: Request) -> StreamingResponse:
+    """Stream video download, analysis, and persistence progress as NDJSON.
+
+    Args:
+        payload (ProcessRequest): Request body with ``videoUrl`` or ``youtubeUrl`` and
+            optional ``fastProcessingMode`` boolean.
+        request (Request): FastAPI request used to detect client disconnect.
+
+    Returns:
+        StreamingResponse: NDJSON stream of events. Progress events use
+        ``{"type": "progress", "progress": <int>, "stage": "<label>"}``. The final
+        success event uses
+        ``{"type": "complete", "progress": 100, "stage": "Complete", "result": {...}}``
+        where ``result`` includes analysis scores, rationales, repost fields, storage
+        paths, and ``databaseSaveOk`` / ``databaseVideoId`` when configured. Failure
+        events use ``{"type": "error", "message": "<user-readable reason>"}`` (e.g.
+        download failure, invalid URL). Streaming stops if the client disconnects.
+    """
     async def event_stream() -> AsyncGenerator[bytes, None]:
         url = payload.videoUrl or payload.youtubeUrl or ""
         for event in process_youtube_video(
@@ -86,6 +103,17 @@ async def process_youtube(payload: ProcessRequest, request: Request) -> Streamin
 
 @app.post("/feedback")
 def submit_analysis_feedback(payload: FeedbackRequest) -> JSONResponse:
+    """HTTP entry point for analysis feedback (interface -> engine contract).
+
+    Args:
+        payload (FeedbackRequest): JSON body with ``vid_id``, ``label`` (``Correct`` or
+            ``Incorrect``), and optional ``comment``.
+
+    Returns:
+        JSONResponse: HTTP 200 with ``{"status": "success", "message": "feedback submitted"}``.
+        HTTP 400 with ``{"status": "missing_fields", "message": "empty feedback"}``.
+        HTTP 500 with ``{"status": "storage_error", "message": "feedback to storage failure"}``.
+    """
     from pipeline.feedback import submit_feedback
 
     result = submit_feedback(

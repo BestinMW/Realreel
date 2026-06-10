@@ -176,7 +176,24 @@ async def assess_repost_risk(
     uploader_handle: str | None = None,
     upload_date: str | date | datetime | None = None,
 ) -> dict[str, Any]:
-    """Compare a submitted video with saved videos and explain repost risk."""
+    """Compare a submitted video with saved videos and explain repost risk.
+
+    Args:
+        session (AsyncSession): Active SQLAlchemy async database session.
+        embedding (list[float] | None): Optional whole-video embedding for similarity search.
+        file_sha256 (str | None): SHA-256 hash for exact duplicate detection.
+        exclude_video_id (uuid.UUID | None): Video id to exclude from matches.
+        original_url (str | None): Submitted video URL.
+        uploader_handle (str | None): Channel or author handle.
+        upload_date (str | date | datetime | None): Platform publish date for repost rules.
+
+    Returns:
+        dict[str, Any]: Assessment with ``isRepost``, ``repostProbability``, ``matches``,
+        and ``rationale`` for the streamed ``complete`` result (``repostRisk``,
+        ``repostMatches``, ``repostRationale``). When no prior records exist, repost risk
+        remains low or unknown. When ``DATABASE_URL`` is disabled, callers receive a
+        skipped assessment instead of raising.
+    """
     current = VideoPostContext(
         original_url, uploader_handle, parse_platform_upload_date(upload_date)
     )
@@ -257,7 +274,21 @@ def run_repost_assessment_sync(
     uploader_handle: str | None = None,
     upload_date: str | date | datetime | None = None,
 ) -> dict[str, Any]:
-    """Run repost assessment from synchronous callers such as the analysis pipeline."""
+    """Run repost assessment from synchronous callers such as the analysis pipeline.
+
+    Args:
+        file_sha256 (str | None): SHA-256 hash of the downloaded video file.
+        embedding (list[float] | None): Optional whole-video embedding for similarity search.
+        original_url (str | None): Submitted video URL.
+        uploader_handle (str | None): Channel or author handle from platform metadata.
+        upload_date (str | date | datetime | None): Platform publish date for repost rules.
+
+    Returns:
+        dict[str, Any]: Repost assessment with ``isRepost``, ``repostProbability``,
+        ``matches``, and ``rationale`` for inclusion in the streamed ``complete`` result.
+        On database failure, returns a skipped assessment with ``skipped: True`` and
+        ``skipReason`` (repost history unavailable when ``DATABASE_URL`` is missing).
+    """
     async def _run() -> dict[str, Any]:
         from storage.db.sync_bridge import bridge_session
 

@@ -17,7 +17,18 @@ from storage.services.reposts import (
 
 
 async def save_analyzed_video(session: AsyncSession, payload: VideoCreate) -> Video:
-    """Store one completed analysis result and run repost detection on save."""
+    """Store one completed analysis result and run repost detection on save.
+
+    Args:
+        session (AsyncSession): Active SQLAlchemy async database session.
+        payload (VideoCreate): Completed analysis row (scores, ``reasons``, paths, etc.).
+
+    Returns:
+        Video: The inserted or updated ORM row. Repost assessment may elevate
+        ``repost_probability`` and ``misleading_context_score`` on the saved record.
+        Used by ``POST /storage/videos``; persistence failures propagate as HTTP 500
+        from the storage API.
+    """
     data = payload.model_dump(mode="python")
     data["original_url"] = str(payload.original_url)
     repost_assessment = await assess_repost_risk(
@@ -30,7 +41,18 @@ async def save_analyzed_video(session: AsyncSession, payload: VideoCreate) -> Vi
 
 
 async def persist_analyzed_video(session: AsyncSession, payload: VideoCreate) -> Video:
-    """Store a pipeline result without re-running repost detection."""
+    """Store a pipeline result without re-running repost detection.
+
+    Args:
+        session (AsyncSession): Active SQLAlchemy async database session.
+        payload (VideoCreate): Completed analysis row built by ``build_db_video_payload``.
+
+    Returns:
+        Video: The inserted or updated ORM row whose ``id`` is returned as ``videoId`` in
+        ``{"ok": True, "videoId": "<uuid>", "error": None}`` from ``persist_db_video_sync``.
+        When Postgres is unavailable, the engine preserves the analysis result and reports
+        ``databaseSaveOk: false`` in the streamed ``complete`` event.
+    """
     data = payload.model_dump(mode="python")
     data["original_url"] = str(payload.original_url)
     return await _insert_or_update_video(session, data)

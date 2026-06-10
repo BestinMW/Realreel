@@ -86,6 +86,21 @@ def upload_to_supabase_storage(
     local_path: Path,
     content_type: str,
 ) -> str:
+    """Upload one pipeline artifact to Supabase Storage (engine -> storage contract).
+
+    Args:
+        bucket (str): Supabase bucket name (e.g. ``raw-videos``, ``transcripts``,
+            ``thumbnails``, ``analysis``).
+        storage_path (str): Object path within the bucket.
+        local_path (Path): Local file to upload.
+        content_type (str): MIME type for the uploaded object.
+
+    Returns:
+        str: The ``storage_path`` on success (reported in the ``complete`` result as
+        ``rawVideoPath``, ``transcriptPath``, ``claimAnalysisPath``, etc.). Raises
+        ``SupabaseStorageUploadError`` when Supabase credentials are missing or the
+        upload fails; the engine may skip uploads or include missing paths in the result.
+    """
     supabase_url, service_role_key = get_supabase_config()
     from urllib.parse import quote as url_quote
 

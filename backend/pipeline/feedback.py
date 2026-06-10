@@ -9,7 +9,20 @@ _VALID_LABELS = {"correct", "incorrect"}
 
 
 def submit_feedback(vid_id: str, label: str, comment: str = "") -> dict[str, Any]:
-    """Validate feedback and persist it."""
+    """Validate analysis feedback and forward it to storage.
+
+    Args:
+        vid_id (str): Video identifier (database id, platform id, source URL, or submitted URL).
+        label (str): User verdict; must be ``Correct`` or ``Incorrect`` (case-insensitive).
+        comment (str): Optional free-text explanation of the feedback.
+
+    Returns:
+        dict[str, Any]: On success, ``{"status": "success", "message": "feedback submitted"}``.
+        On missing or invalid required fields,
+        ``{"status": "missing_fields", "message": "empty feedback"}``.
+        When storage cannot persist the record,
+        ``{"status": "storage_error", "message": "feedback to storage failure"}``.
+    """
     cleaned_vid_id = (vid_id or "").strip()
     cleaned_label = (label or "").strip()
     cleaned_comment = (comment or "").strip()

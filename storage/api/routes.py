@@ -39,6 +39,19 @@ async def save_video_result(
     payload: VideoCreate,
     session: AsyncSession = Depends(get_db_session),
 ) -> VideoRead:
+    """Persist a completed analysis via ``POST /storage/videos`` (engine -> storage).
+
+    Args:
+        payload (VideoCreate): Completed analysis row with ``original_url``, ``file_sha256``,
+            risk scores, and ``reasons``.
+        session (AsyncSession): Injected async database session.
+
+    Returns:
+        VideoRead: HTTP 201 response with the saved video row (includes ``id``, scores,
+        and paths). On persistence failure, raises HTTP 500 (equivalent to
+        ``{"status": "storage_error", "message": "unable to save to storage"}`` for
+        feedback; video save errors surface as HTTP exceptions).
+    """
     video = await save_analyzed_video(session, payload)
     await session.commit()
     return VideoRead.model_validate(video)
@@ -134,6 +147,18 @@ async def create_feedback(
     payload: FeedbackCreate,
     session: AsyncSession = Depends(get_db_session),
 ) -> FeedbackSaveResult:
+    """Persist analysis feedback via ``POST /storage/feedback`` (engine -> storage).
+
+    Args:
+        payload (FeedbackCreate): Feedback with ``vid_id``, ``label`` (``Correct`` or
+            ``Incorrect``), and optional ``comment``.
+        session (AsyncSession): Injected async database session.
+
+    Returns:
+        FeedbackSaveResult: HTTP 200 with ``{"status": "success", "id": "<feedback-uuid>"}``.
+        HTTP 500 when ``save_feedback`` returns
+        ``{"status": "storage_error", "message": "unable to save to storage"}``.
+    """
     result = await save_feedback(session, payload)
     if result["status"] == "success":
         await session.commit()

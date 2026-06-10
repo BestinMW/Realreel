@@ -9,7 +9,21 @@ Run:
 
 
 def compute_reliability_score(result: dict | None) -> int | None:
-    """Same contract as the frontend reliability score helper."""
+    """Compute the user-facing reliability percentage from engine risk fields.
+
+    Mirrors ``getReliabilityScore()`` in ``frontend/app/page.tsx`` (interface layer).
+
+    Args:
+        result (dict | None): Analysis ``result`` from a ``complete`` stream event with
+            optional ``misleadingProbability``, ``visualAuthenticityRisk``,
+            ``thumbnailClickbaitScore``, ``repostRisk``, and ``claimConfidence``.
+
+    Returns:
+        int | None: Reliability score ``0``–``100`` computed as
+        ``round(100 * (1 - max(risk scores)))`` when any risk field is present; falls back
+        to ``round(claimConfidence * 100)`` when only claim confidence is available;
+        ``None`` when ``result`` is empty or has no usable scores.
+    """
     if not result:
         return None
 
