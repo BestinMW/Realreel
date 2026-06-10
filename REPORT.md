@@ -33,7 +33,7 @@
   - README execution instructions
   - environment setup notes
   - requirements/design worksheet content
-- Contributed to test coverage improvements:
+- Contributed to test coverage:
   - interface behavior tests
   - backend processing-flow tests
   - mocked tests for fast-mode and non-fast-mode processing
@@ -62,7 +62,7 @@
   - architecture mapping
   - interface contract descriptions
   - README links to project documentation
-- Contributed to automated testing:
+- Contributed to testing coverage:
   - storage and repost tests
   - backend helper tests
   - mocked external-service tests for OpenAI, Gemini/Vertex, yt-dlp, ffmpeg, Supabase, and database behavior
@@ -75,26 +75,13 @@
   - Part A: functionality
   - Part B: architecture mapping
   - Part C: interface contracts
-- Expanded the automated test suite together across:
-  - `backend`
-  - `storage`
-  - `interface`
-- Verified local test coverage using:
-
-```powershell
-C:\Users\tehra\AppData\Local\Python\bin\python.exe -m pytest --cov=backend --cov=storage --cov-report=term-missing tests/
-```
-
-- Increased test coverage from `47%` to `90%`.
-- Confirmed the final suite result:
-  - `151 passed`
-  - `90%` total coverage
+- Expanded the automated test suite together across interface, engine, and storage
+- Covered test gaps to get coverage to '90%'
 
 ## Final Deliverables
-- Main RealReel web app experience
+- Main RealReel web app
 - Backend video-processing pipeline
-- Supabase/Postgres storage support
+- Supabase/Postgres storage/db support
 - README with execution instructions
 - Requirements and design worksheet
 - Expanded automated test suite
-- Removed debug page
