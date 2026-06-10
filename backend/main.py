@@ -36,6 +36,7 @@ app.add_middleware(
 class ProcessRequest(BaseModel):
     youtubeUrl: str | None = None
     videoUrl: str | None = None
+    fastProcessingMode: bool | None = None
 
 
 @app.get("/health")
@@ -61,7 +62,10 @@ def health() -> dict:
 async def process_youtube(payload: ProcessRequest, request: Request) -> StreamingResponse:
     async def event_stream() -> AsyncGenerator[bytes, None]:
         url = payload.videoUrl or payload.youtubeUrl or ""
-        for event in process_youtube_video(url):
+        for event in process_youtube_video(
+            url,
+            fast_processing_mode=payload.fastProcessingMode,
+        ):
             if await request.is_disconnected():
                 break
             yield (json.dumps(event) + "\n").encode("utf-8")

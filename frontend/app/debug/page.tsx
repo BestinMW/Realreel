@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type PreviewSource =
   | { type: "empty" }
@@ -192,6 +192,22 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [progressStage, setProgressStage] = useState("");
+  const [fastProcessingMode, setFastProcessingMode] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("fastProcessingMode");
+    if (saved === "true") {
+      setFastProcessingMode(true);
+    }
+  }, []);
+
+  function toggleFastProcessingMode() {
+    setFastProcessingMode((current) => {
+      const next = !current;
+      localStorage.setItem("fastProcessingMode", String(next));
+      return next;
+    });
+  }
 
   async function handleProcessClick() {
     setIsProcessing(true);
@@ -204,7 +220,7 @@ export default function Home() {
       const response = await fetch('/api/process-youtube', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoUrl }),
+        body: JSON.stringify({ videoUrl, fastProcessingMode }),
       });
 
       if (!response.ok) {
@@ -281,9 +297,25 @@ export default function Home() {
             placeholder="https://www.youtube.com/watch?v=..."
             disabled={isProcessing}
           />
-          <button onClick={handleProcessClick} disabled={isProcessing || preview.type === 'empty' || preview.type === 'invalid'}>
-            {isProcessing ? 'Processing...' : 'Process Video'}
-          </button>
+          <div className="actionRow">
+            <button
+              type="button"
+              className={`modeToggle ${fastProcessingMode ? "modeToggleActive" : ""}`}
+              onClick={toggleFastProcessingMode}
+              disabled={isProcessing}
+              aria-pressed={fastProcessingMode}
+            >
+              Fast mode: {fastProcessingMode ? "On" : "Off"}
+            </button>
+            <button onClick={handleProcessClick} disabled={isProcessing || preview.type === 'empty' || preview.type === 'invalid'}>
+              {isProcessing ? 'Processing...' : 'Process Video'}
+            </button>
+          </div>
+          {fastProcessingMode && (
+            <p className="modeHint">
+              Skips visual events, metadata, thumbnail clickbait, and raw video upload.
+            </p>
+          )}
         </div>
       </section>
 

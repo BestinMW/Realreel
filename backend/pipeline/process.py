@@ -169,7 +169,15 @@ def select_keyframes_for_analysis(
     return selected_paths, selected_timestamps
 
 
-def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
+def process_youtube_video(
+    video_url: str,
+    *,
+    fast_processing_mode: bool | None = None,
+) -> Generator[dict, None, None]:
+    use_fast_processing_mode = (
+        FAST_PROCESSING_MODE if fast_processing_mode is None else fast_processing_mode
+    )
+
     def send(event: dict) -> dict:
         return event
 
@@ -274,7 +282,7 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
         )
 
 
-        if FAST_PROCESSING_MODE:
+        if use_fast_processing_mode:
             visual_event_analysis = {
                 "summary": {},
                 "frames": [],
@@ -369,7 +377,7 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
         )
 
         yield send({"type": "progress", "progress": 79, "stage": "Analyzing metadata"})
-        if FAST_PROCESSING_MODE:
+        if use_fast_processing_mode:
             metadata_analysis = {
                 "metadata_score": None,
                 "reasons": [],
@@ -415,7 +423,7 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
         )
 
         yield send({"type": "progress", "progress": 84, "stage": "Checking thumbnail fit"})
-        if FAST_PROCESSING_MODE:
+        if use_fast_processing_mode:
             thumbnail_clickbait_analysis = {
                 "ok": False,
                 "clickbaitScore": None,
@@ -448,7 +456,7 @@ def process_youtube_video(video_url: str) -> Generator[dict, None, None]:
                 "UPLOAD_RAW_VIDEO=false skips storing the full MP4. RealReel kept "
                 "the transcript, thumbnail, and analysis artifacts."
             )
-        elif FAST_PROCESSING_MODE:
+        elif use_fast_processing_mode:
             raw_video_storage_path = None
             raw_video_upload_skipped_reason = "FAST_PROCESSING_MODE=true skips raw MP4 upload."
         else:

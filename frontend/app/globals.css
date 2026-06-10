@@ -183,6 +183,37 @@ h1 {
   opacity: 0.55;
 }
 
+.actionRow {
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+}
+
+.modeToggle {
+  background: var(--surface-strong);
+  border: 1px solid var(--card-border);
+  color: var(--text);
+}
+
+.modeToggle:hover {
+  background: var(--surface);
+  border-color: var(--accent);
+}
+
+.modeToggleActive {
+  background: rgba(56, 189, 248, 0.14);
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.modeHint {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 500;
+  line-height: 1.45;
+  margin: 0;
+}
+
 .previewCard {
   aspect-ratio: 16 / 9;
   background: var(--surface);
