@@ -177,7 +177,7 @@ From repo root:
 python scripts/run_tests.py
 ```
 
-Backend tests live in `tests/backend/` (URL parsing, indicators, claim analysis, metadata rules, frame sampling, repost helpers).
+Engine tests live in `tests/engine/` (URL parsing, indicators, claim analysis, metadata rules, frame sampling, repost helpers).
 
 ## Layout
 
@@ -202,4 +202,4 @@ backend/
     config.py                  Env flags and bucket names
 ```
 
-Unit tests for the backend live in `tests/backend/` at the repo root.
+Unit tests for the engine live in `tests/engine/` at the repo root.

@@ -1,106 +1,111 @@
-import os
-import unittest
+"""Unit tests for storage schemas, paths, and repost payload merging.
+
+Run:
+    pytest tests/storage/test_pipeline_units.py -v
+"""
+
 import uuid
 from decimal import Decimal
 
+import pytest
 
-os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost/db")
-os.environ.setdefault("SUPABASE_URL", "https://example.supabase.co")
-os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "fake-service-role-key")
-os.environ.setdefault("EMBEDDING_DIMENSION", "512")
-
-from storage.assets.paths import (  # noqa: E402
-    audio_path,
-    raw_video_path,
-    thumbnail_path,
-    transcript_path,
-)
-from storage.db.models import Platform  # noqa: E402
-from storage.schemas import VideoCreate  # noqa: E402
-from storage.services.reposts import apply_repost_assessment_to_payload  # noqa: E402
-from storage.vector import validate_embedding  # noqa: E402
+from storage.assets.paths import audio_path, raw_video_path, thumbnail_path, transcript_path
+from storage.db.models import Platform
+from storage.schemas import VideoCreate
+from storage.services.reposts import apply_repost_assessment_to_payload
+from storage.vector import validate_embedding
 
 
-class StoragePipelineUnitTests(unittest.TestCase):
-    def test_video_payload_validates(self) -> None:
-        payload = VideoCreate(
-            original_url="https://www.youtube.com/watch?v=test-video",
-            platform=Platform.YOUTUBE,
-            title="Test video",
-            raw_video_path="videos/test/raw/original.mp4",
-            thumbnail_path="videos/test/thumbnails/thumbnail.jpg",
-            transcript_text="This is a test transcript.",
-            duration_seconds=Decimal("12.5"),
-            file_sha256="a" * 64,
-            video_embedding=[0.01] * 512,
-            embedding_model="test-embedding-model",
-            ai_generated_score=Decimal("0.1000"),
-            misleading_context_score=Decimal("0.2000"),
-            repost_probability=Decimal("0.3000"),
-            credibility_score=Decimal("0.8000"),
-            overall_risk_score=Decimal("0.2500"),
-            confidence=Decimal("0.9000"),
-            reasons={"summary": "Unit test payload."},
-        )
+# ---------------------------------------------------------------------------
+# Test 1: VideoCreate — validates a complete payload
+# ---------------------------------------------------------------------------
+def test_video_payload_validates():
+    payload = VideoCreate(
+        original_url="https://www.youtube.com/watch?v=test-video",
+        platform=Platform.YOUTUBE,
+        title="Test video",
+        raw_video_path="videos/test/raw/original.mp4",
+        thumbnail_path="videos/test/thumbnails/thumbnail.jpg",
+        transcript_text="This is a test transcript.",
+        duration_seconds=Decimal("12.5"),
+        file_sha256="a" * 64,
+        video_embedding=[0.01] * 512,
+        embedding_model="test-embedding-model",
+        ai_generated_score=Decimal("0.1000"),
+        misleading_context_score=Decimal("0.2000"),
+        repost_probability=Decimal("0.3000"),
+        credibility_score=Decimal("0.8000"),
+        overall_risk_score=Decimal("0.2500"),
+        confidence=Decimal("0.9000"),
+        reasons={"summary": "Unit test payload."},
+    )
 
-        self.assertEqual(payload.platform, Platform.YOUTUBE)
-        self.assertEqual(len(payload.video_embedding or []), 512)
-
-    def test_storage_paths_are_deterministic(self) -> None:
-        video_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
-
-        self.assertEqual(
-            raw_video_path(video_id, "clip.mp4"),
-            "videos/00000000-0000-0000-0000-000000000001/raw/original.mp4",
-        )
-        self.assertEqual(
-            audio_path(video_id),
-            "videos/00000000-0000-0000-0000-000000000001/audio/audio.wav",
-        )
-        self.assertEqual(
-            thumbnail_path(video_id),
-            "videos/00000000-0000-0000-0000-000000000001/thumbnails/thumbnail.jpg",
-        )
-        self.assertEqual(
-            transcript_path(video_id, "en"),
-            "videos/00000000-0000-0000-0000-000000000001/transcripts/transcript-en.json",
-        )
-
-    def test_embedding_dimension_is_checked(self) -> None:
-        validate_embedding([0.0] * 512)
-
-        with self.assertRaises(ValueError):
-            validate_embedding([0.0] * 3)
-
-    def test_repost_assessment_flags_misleading_context(self) -> None:
-        payload_data = {
-            "repost_probability": Decimal("0.1000"),
-            "misleading_context_score": Decimal("0.2000"),
-            "overall_risk_score": Decimal("0.3000"),
-            "reasons": {"summary": "Existing analysis."},
-        }
-        assessment = {
-            "isRepost": True,
-            "repostProbability": Decimal("0.9200"),
-            "matches": [
-                {
-                    "id": "00000000-0000-0000-0000-000000000001",
-                    "originalUrl": "https://example.com/older-video.mp4",
-                    "similarity": 0.94,
-                    "createdAt": "2024-01-01T00:00:00+00:00",
-                }
-            ],
-            "rationale": "Closest saved video is 94% similar.",
-        }
-
-        merged = apply_repost_assessment_to_payload(payload_data, assessment)
-
-        self.assertEqual(merged["repost_probability"], Decimal("0.9200"))
-        self.assertEqual(merged["misleading_context_score"], Decimal("0.6500"))
-        self.assertEqual(merged["overall_risk_score"], Decimal("0.6500"))
-        self.assertIn("possible_repost", merged["reasons"]["flags"])
-        self.assertEqual(merged["reasons"]["repost"]["matches"][0]["similarity"], 0.94)
+    assert payload.platform == Platform.YOUTUBE
+    assert len(payload.video_embedding or []) == 512
 
 
-if __name__ == "__main__":
-    unittest.main()
+# ---------------------------------------------------------------------------
+# Test 2: storage paths — deterministic per video id
+# ---------------------------------------------------------------------------
+def test_storage_paths_are_deterministic():
+    video_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
+
+    assert (
+        raw_video_path(video_id, "clip.mp4")
+        == "videos/00000000-0000-0000-0000-000000000001/raw/original.mp4"
+    )
+    assert (
+        audio_path(video_id)
+        == "videos/00000000-0000-0000-0000-000000000001/audio/audio.wav"
+    )
+    assert (
+        thumbnail_path(video_id)
+        == "videos/00000000-0000-0000-0000-000000000001/thumbnails/thumbnail.jpg"
+    )
+    assert (
+        transcript_path(video_id, "en")
+        == "videos/00000000-0000-0000-0000-000000000001/transcripts/transcript-en.json"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 3: validate_embedding — checks configured dimension
+# ---------------------------------------------------------------------------
+def test_embedding_dimension_is_checked():
+    validate_embedding([0.0] * 512)
+
+    with pytest.raises(ValueError):
+        validate_embedding([0.0] * 3)
+
+
+# ---------------------------------------------------------------------------
+# Test 4: apply_repost_assessment_to_payload — raises misleading context
+# ---------------------------------------------------------------------------
+def test_repost_assessment_flags_misleading_context():
+    payload_data = {
+        "repost_probability": Decimal("0.1000"),
+        "misleading_context_score": Decimal("0.2000"),
+        "overall_risk_score": Decimal("0.3000"),
+        "reasons": {"summary": "Existing analysis."},
+    }
+    assessment = {
+        "isRepost": True,
+        "repostProbability": Decimal("0.9200"),
+        "matches": [
+            {
+                "id": "00000000-0000-0000-0000-000000000001",
+                "originalUrl": "https://example.com/older-video.mp4",
+                "similarity": 0.94,
+                "createdAt": "2024-01-01T00:00:00+00:00",
+            }
+        ],
+        "rationale": "Closest saved video is 94% similar.",
+    }
+
+    merged = apply_repost_assessment_to_payload(payload_data, assessment)
+
+    assert merged["repost_probability"] == Decimal("0.9200")
+    assert merged["misleading_context_score"] == Decimal("0.6500")
+    assert merged["overall_risk_score"] == Decimal("0.6500")
+    assert "possible_repost" in merged["reasons"]["flags"]
+    assert merged["reasons"]["repost"]["matches"][0]["similarity"] == 0.94

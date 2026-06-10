@@ -15,7 +15,7 @@ Realreel/
   frontend/          Next.js UI
   backend/           FastAPI video processor
   storage/           Postgres + Supabase Storage layer (used by the backend)
-  tests/             backend/, storage/, and frontend/ test suites
+  tests/             interface/, engine/, and storage/ test suites
   scripts/           start-backend.ps1, start-frontend.ps1, run_tests.py, check-deps.ps1
 ```
 
@@ -103,13 +103,14 @@ Open the app at http://localhost:3000
 
 ## Tests
 
-Unit tests:
+Unit tests (pytest):
 
 ```bash
+pip install -r requirements-test.txt
 python scripts/run_tests.py
 ```
 
-This discovers `tests/backend`, `tests/storage`, and `tests/frontend`. Storage integration smoke test (requires real `DATABASE_URL`):
+This runs `tests/interface`, `tests/engine`, and `tests/storage`. Storage integration smoke test (requires real `DATABASE_URL`):
 
 ```bash
 python tests/storage/smoke_test.py
