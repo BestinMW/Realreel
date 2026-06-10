@@ -41,7 +41,7 @@ The start scripts install these automatically on first run. To install manually:
 cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+pip install -r ..\requirements.txt
 
 cd ..\frontend
 npm install
@@ -173,6 +173,7 @@ RealReel uses three layers — interface, engine, and storage — rather than a 
 | `backend/pipeline/` | Engine | Transcription, vision, claim check, metadata, thumbnail, orchestration |
 | `storage/` | Storage | Postgres models, Supabase uploads, repost detection, feedback persistence |
 | `storage/schema.sql` | Storage | Database and bucket setup for Supabase |
+| `requirements.txt` | — | Single Python dependency file (backend, storage, tests) |
 | `scripts/` | — | `start-backend.ps1`, `start-frontend.ps1`, `check-deps.ps1`, `run_tests.py` |
 | `docs/` | — | Requirements and design reference |
 
@@ -188,6 +189,6 @@ RealReel uses three layers — interface, engine, and storage — rather than a 
 Run tests:
 
 ```powershell
-pip install -r requirements-test.txt
+pip install -r requirements.txt
 python scripts/run_tests.py
 ```

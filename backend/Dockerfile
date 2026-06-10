@@ -4,12 +4,12 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg tesseract-ocr yt-dlp \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+WORKDIR /app/backend
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
 
-COPY . .
+COPY backend/ .
 
 ENV PORT=8000
 EXPOSE 8000

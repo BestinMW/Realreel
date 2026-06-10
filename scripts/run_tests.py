@@ -14,7 +14,7 @@ def main() -> int:
     try:
         import pytest
     except ImportError:
-        print("pytest is required. Install with: pip install -r requirements-test.txt")
+        print("pytest is required. Install with: pip install -r requirements.txt")
         return 1
 
     return pytest.main(

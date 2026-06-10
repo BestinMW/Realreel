@@ -12,7 +12,7 @@ Video processing runs on the **Python backend** (`../backend`). This app proxies
 cd ../backend
 python -m venv .venv
 .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r ..\requirements.txt
 # copy env: SUPABASE_*, OPENAI_API_KEY, GEMINI_API_KEY, etc. (see backend/README.md)
 uvicorn main:app --reload --port 8000
 ```

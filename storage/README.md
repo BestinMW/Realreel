@@ -74,8 +74,7 @@ storage/
     supabase.py              Upload, signed URL, delete (optional Python client)
   schemas/contracts.py       Pydantic `VideoCreate`, `VideoRead`, etc.
   api/routes.py              Optional REST router (not mounted by default backend)
-  requirements.txt
-  requirements-assets.txt  Optional Supabase Python client deps
+  requirements.txt         Redirects to repo-root requirements.txt
 ```
 
 Storage tests live in `tests/storage/` at the repo root (`test_pipeline_units.py`, `test_storage_reposts.py`, `test_db_videos.py`, `smoke_test.py`).
@@ -104,14 +103,10 @@ Only the backend should use `SUPABASE_SERVICE_ROLE_KEY`. Never expose it in the 
 Install Python deps (for smoke test or standalone API):
 
 ```bash
-pip install -r storage/requirements.txt
+pip install -r requirements.txt
 ```
 
-For `storage/assets/supabase.py` helpers:
-
-```bash
-pip install -r storage/requirements-assets.txt
-```
+(`storage/requirements.txt` redirects to the repo-root file.)
 
 ## Storage buckets
 

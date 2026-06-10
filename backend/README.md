@@ -10,7 +10,7 @@ Supports YouTube, TikTok, Instagram, and direct video links where `yt-dlp` can f
 - System binaries: `ffmpeg`, `yt-dlp`
 - Optional: `tesseract-ocr` (keyframe on-screen text OCR)
 
-Docker installs these automatically when using `backend/Dockerfile`.
+Docker installs these automatically when using `backend/Dockerfile` (build from repo root: `docker build -f backend/Dockerfile .`).
 
 ### Windows (one-time)
 
@@ -36,7 +36,7 @@ Or use `.\scripts\start-backend.ps1`, which sets `TESSERACT_CMD` when Tesseract 
 cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+pip install -r ..\requirements.txt
 copy .env.example .env.local
 uvicorn main:app --reload --port 8000
 ```
