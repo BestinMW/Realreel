@@ -2,26 +2,19 @@ from __future__ import annotations
 
 from typing import Any
 
-from storage.schemas import FeedbackCreate
-from storage.services.feedback import save_feedback_sync
-
 _VALID_LABELS = {"correct", "incorrect"}
 
 
-def submit_feedback(vid_id: str, label: str, comment: str = "") -> dict[str, Any]:
-    """Validate analysis feedback and forward it to storage.
-
-    Args:
-        vid_id (str): Video identifier (database id, platform id, source URL, or submitted URL).
-        label (str): User verdict; must be ``Correct`` or ``Incorrect`` (case-insensitive).
-        comment (str): Optional free-text explanation of the feedback.
+def validate_feedback_submission(
+    vid_id: str,
+    label: str,
+    comment: str = "",
+) -> dict[str, Any]:
+    """Validate analysis feedback without touching persistence.
 
     Returns:
-        dict[str, Any]: On success, ``{"status": "success", "message": "feedback submitted"}``.
-        On missing or invalid required fields,
-        ``{"status": "missing_fields", "message": "empty feedback"}``.
-        When storage cannot persist the record,
-        ``{"status": "storage_error", "message": "feedback to storage failure"}``.
+        dict[str, Any]: ``{"status": "valid", "vid_id": ..., "label": ..., "comment": ...}``
+        on success, or ``{"status": "missing_fields", "message": "empty feedback"}``.
     """
     cleaned_vid_id = (vid_id or "").strip()
     cleaned_label = (label or "").strip()
@@ -45,21 +38,9 @@ def submit_feedback(vid_id: str, label: str, comment: str = "") -> dict[str, Any
             "message": "empty feedback",
         }
 
-    save_result = save_feedback_sync(
-        FeedbackCreate(
-            vid_id=cleaned_vid_id,
-            label=cleaned_label,
-            comment=cleaned_comment or None,
-        )
-    )
-
-    if save_result.get("status") != "success":
-        return {
-            "status": "storage_error",
-            "message": "feedback to storage failure",
-        }
-
     return {
-        "status": "success",
-        "message": "feedback submitted",
+        "status": "valid",
+        "vid_id": cleaned_vid_id,
+        "label": cleaned_label,
+        "comment": cleaned_comment or None,
     }

@@ -54,7 +54,7 @@
   - Backend normalizes risk outputs to 0–1 when each stage has enough evidence
   - User sees a concise score and rationale instead of raw internal diagnostics
   - Artifacts upload to configured Supabase Storage buckets
-  - When `DATABASE_URL` is set, repost checks compare the new video against prior saved videos (hash match; embedding similarity when available)
+  - When `DATABASE_URL` is set, repost checks compare the new video against prior saved videos (SHA-256 hash match from the pipeline; pgvector embedding similarity is supported in storage but not yet passed from the engine)
   - Completed analysis is inserted or updated in Postgres when database save is enabled
 - Failure/Edge Cases:
   - No clear factual claim -> claim verdict `no_clear_claim` or equivalent fallback
@@ -82,6 +82,8 @@
 ## Part B: Architecture Mapping
 For each functionality, map responsibilities to components.
 
+**Package boundaries:** `backend/pipeline/` contains analysis-only code. `backend/adapters/` is the only engine package that imports the top-level `storage` package (feedback, repost assessment, Postgres persistence, and Supabase artifact uploads). `storage/` never imports `backend/`.
+
 ### Functionality 1 Mapping
 - `interface` responsibilities:
   - Render URL input, preview area, fast mode toggle, and process button in `frontend/app/page.tsx`
@@ -105,7 +107,7 @@ For each functionality, map responsibilities to components.
   - Return `progress`, `complete`, or `error` events; stop streaming if the client disconnects
 - `storage` responsibilities:
   - None during download and early pipeline stages
-  - Storage is invoked by the engine only when analysis and persistence stages run (Functionality 3)
+  - Invoked indirectly through `backend/adapters/` when analysis and persistence stages run (Functionality 3)
 
 ### Functionality 3 Mapping
 - `interface` responsibilities:
@@ -114,16 +116,18 @@ For each functionality, map responsibilities to components.
   - Build user-facing explanation text in `getReliabilityExplanation()`
   - Display reliability score, rationales, and persistence-related outcomes without exposing raw debug-only fields
 - `engine` responsibilities:
-  - Run analysis stages: transcription (`transcribe.py`), keyframe vision/OCR (`vision.py`, `ocr.py`), temporal analysis (`temporal.py`), metadata rules (`metadata_analyzer.py`), thumbnail clickbait (`thumbnail.py`), and claim analysis (`claim_analysis.py`)
-  - Normalize risk outputs to 0–1 values and return partial results when optional stages fail
-  - Assess repost risk via `storage/services/reposts.py`
-  - Upload artifacts through `backend/pipeline/storage.py`
-  - Map pipeline output to a database row through `storage/services/db_videos.py`
+  - Run analysis stages in `backend/pipeline/`: media prep (`media.py`), transcription (`transcribe.py`), temporal analysis (`temporal.py`), visual events (`visual_events.py`), keyframe vision/OCR (`keyframes.py`, `vision.py`, `ocr.py`), metadata rules (`metadata_analyzer.py`), thumbnail clickbait (`thumbnail.py`), and claim analysis (`claim_analysis.py`)
+  - Orchestrate the run in `backend/pipeline/process.py`; normalize risk outputs to 0–1 values and return partial results when optional stages fail
+  - Delegate external I/O to `backend/adapters/`:
+    - `adapters/reposts.py` — repost assessment (`assess_repost_history`)
+    - `adapters/object_storage.py` — Supabase artifact uploads (`upload_to_supabase_storage`, `ensure_storage_buckets`)
+    - `adapters/persistence.py` — database save (`persist_analysis_record`)
   - Include scores, rationales, repost fields, storage paths, and `databaseSaveOk` / `databaseVideoId` in the final response
 - `storage` responsibilities:
-  - Store analysis JSON and media artifacts in Supabase Storage via `storage/assets/supabase.py`
-  - Query prior videos and run repost lookup (hash match; pgvector similarity when available) in `storage/services/reposts.py`
-  - Upsert completed analysis rows in `public.videos` through `storage/services/videos.py`
+  - Repost lookup and rules in `storage/services/reposts.py` (hash match; pgvector similarity when an embedding is supplied)
+  - Map pipeline output to a `VideoCreate` row in `storage/services/db_videos.py`; upsert via `storage/services/videos.py`
+  - Persist feedback in `public.analysis_feedback` via `storage/services/feedback.py`
+  - Optional standalone storage API (`storage/api/routes.py`) using `storage/assets/supabase.py` for signed URLs and service-layer uploads (separate from the engine's httpx upload adapter)
 
 ### Functionality 4 Mapping
 - `interface` responsibilities:
@@ -132,8 +136,8 @@ For each functionality, map responsibilities to components.
   - Show `feedback submitted` or error message to the user
 - `engine` responsibilities:
   - Expose `POST /feedback` in `backend/main.py`
-  - Validate required fields and label format in `submit_feedback()` (`backend/pipeline/feedback.py`)
-  - Forward valid feedback records to storage; do not persist feedback in the interface layer
+  - Validate required fields and label format in `validate_feedback_submission()` (`backend/pipeline/feedback.py`)
+  - Persist valid feedback through `submit_feedback()` (`backend/adapters/feedback.py`); do not persist feedback in the interface layer
 - `storage` responsibilities:
   - Persist feedback records in `public.analysis_feedback` via `save_feedback()` in `storage/services/feedback.py`
   - Expose `POST /storage/feedback` in `storage/api/routes.py` for direct storage API access
@@ -222,12 +226,17 @@ For each functionality, map responsibilities to components.
 
 #### `engine -> storage`
 - Function(s):
-  - `upload_pipeline_artifacts(...)` in `backend/pipeline/storage.py`
-  - `storage_service.upload(...)` in `storage/assets/supabase.py`
-  - `run_repost_assessment_sync(...)` in `storage/services/reposts.py`
-  - `build_db_video_payload(...)` and `persist_db_video_sync(...)` in `storage/services/db_videos.py`
-  - `persist_analyzed_video(session, payload)` in `storage/services/videos.py`
-  - `POST /storage/videos` in `storage/api/routes.py` (optional standalone API)
+  - **Adapter layer** (`backend/adapters/`, called from `backend/pipeline/process.py`):
+    - `upload_to_supabase_storage(...)` and `ensure_storage_buckets(...)` in `adapters/object_storage.py`
+    - `assess_repost_history(...)` in `adapters/reposts.py`
+    - `persist_analysis_record(...)` in `adapters/persistence.py`
+  - **Storage layer** (imported only by adapters):
+    - `run_repost_assessment_sync(...)` in `storage/services/reposts.py`
+    - `build_db_video_payload(...)` and `persist_db_video_sync(...)` in `storage/services/db_videos.py`
+    - `persist_analyzed_video(session, payload)` in `storage/services/videos.py`
+  - **Optional standalone storage API** (not used by the default processing stream):
+    - `storage_service.upload(...)` in `storage/assets/supabase.py`
+    - `POST /storage/videos` in `storage/api/routes.py`
 - Input payload:
   ```json
   {
@@ -264,8 +273,9 @@ For each functionality, map responsibilities to components.
 #### `interface -> engine`
 - Function(s):
   - `fetch("/api/feedback")` in `frontend/app/page.tsx`
-  - `submit_feedback(vid_id, label, comment)` in `backend/pipeline/feedback.py`
   - `POST /feedback` in `backend/main.py`
+  - `submit_feedback(vid_id, label, comment)` in `backend/adapters/feedback.py`
+  - `validate_feedback_submission(vid_id, label, comment)` in `backend/pipeline/feedback.py` (validation only; no storage imports)
 - Input payload:
   ```json
   {
@@ -282,9 +292,11 @@ For each functionality, map responsibilities to components.
 
 #### `engine -> storage`
 - Function(s):
-  - `save_feedback_sync(feedback_data)` in `storage/services/feedback.py`
-  - `save_feedback(session, feedback_data)` in `storage/services/feedback.py`
-  - `POST /storage/feedback` in `storage/api/routes.py`
+  - `submit_feedback(...)` in `backend/adapters/feedback.py` forwards to:
+    - `save_feedback_sync(feedback_data)` in `storage/services/feedback.py`
+  - Optional direct storage API (not used by the default feedback proxy):
+    - `save_feedback(session, feedback_data)` in `storage/services/feedback.py`
+    - `POST /storage/feedback` in `storage/api/routes.py`
 - Input payload:
   ```json
   {

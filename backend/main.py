@@ -114,7 +114,7 @@ def submit_analysis_feedback(payload: FeedbackRequest) -> JSONResponse:
         HTTP 400 with ``{"status": "missing_fields", "message": "empty feedback"}``.
         HTTP 500 with ``{"status": "storage_error", "message": "feedback to storage failure"}``.
     """
-    from pipeline.feedback import submit_feedback
+    from adapters.feedback import submit_feedback
 
     result = submit_feedback(
         vid_id=payload.vid_id,

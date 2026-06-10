@@ -8,14 +8,15 @@ Run:
 
 from unittest.mock import patch
 
-from pipeline.feedback import submit_feedback
+from adapters.feedback import submit_feedback
+from pipeline.feedback import validate_feedback_submission
 
 
 # ---------------------------------------------------------------------------
-# Test 1: submit_feedback — missing required fields
+# Test 1: validate_feedback_submission — missing required fields
 # ---------------------------------------------------------------------------
-def test_submit_feedback_returns_empty_feedback_when_required_fields_missing():
-    result = submit_feedback("", "", "")
+def test_validate_feedback_submission_returns_empty_feedback_when_required_fields_missing():
+    result = validate_feedback_submission("", "", "")
     assert result["status"] == "missing_fields"
     assert result["message"] == "empty feedback"
 
@@ -25,7 +26,7 @@ def test_submit_feedback_returns_empty_feedback_when_required_fields_missing():
 # ---------------------------------------------------------------------------
 def test_submit_feedback_returns_storage_error_when_save_fails():
     with patch(
-        "pipeline.feedback.save_feedback_sync",
+        "adapters.feedback.save_feedback_sync",
         return_value={"status": "storage_error", "message": "unable to save to storage"},
     ):
         result = submit_feedback("vid-1", "Incorrect", "too high")
@@ -39,7 +40,7 @@ def test_submit_feedback_returns_storage_error_when_save_fails():
 # ---------------------------------------------------------------------------
 def test_submit_feedback_returns_success_when_save_succeeds():
     with patch(
-        "pipeline.feedback.save_feedback_sync",
+        "adapters.feedback.save_feedback_sync",
         return_value={"status": "success", "id": "feedback-1"},
     ):
         result = submit_feedback(

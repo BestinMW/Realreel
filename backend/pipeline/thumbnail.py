@@ -158,9 +158,9 @@ def _analyze_with_vertex_ai(thumbnail_path: Path, prompt: str) -> dict[str, Any]
     if not VERTEX_AI_PROJECT_ID:
         return _empty_clickbait_result("Vertex AI vision is not configured. Set VERTEX_AI_PROJECT_ID.")
 
-    from .vision import _get_vertex_access_token
+    from .vision import get_vertex_access_token
 
-    token, token_error = _get_vertex_access_token()
+    token, token_error = get_vertex_access_token()
     if token_error:
         return _empty_clickbait_result(token_error)
 

@@ -12,8 +12,6 @@ from .config import (
     KEYFRAME_INTERVAL_SECONDS,
     KEYFRAME_SCENE_THRESHOLD,
     MAX_KEYFRAMES_TO_ANALYZE,
-    REPOST_ASSESSMENT_ENABLED,
-    DATABASE_SAVE_ENABLED,
     STORAGE_BUCKETS,
     TRANSCRIPTION_LEAD_IN_SECONDS,
     UPLOAD_RAW_VIDEO,
@@ -30,11 +28,13 @@ from .media import (
     extract_sampled_frames,
     list_image_files,
 )
-from .storage import (
+from adapters.object_storage import (
     SupabaseStorageUploadError,
     ensure_storage_buckets,
     upload_to_supabase_storage,
 )
+from adapters.persistence import persist_analysis_record
+from adapters.reposts import assess_repost_history
 from .temporal import analyze_temporal_consistency
 from .thumbnail import (
     analyze_thumbnail_clickbait,
@@ -49,95 +49,6 @@ from .youtube import parse_video_url, safe_segment
 
 
 UPLOAD_WORKERS = 6
-
-
-def _assess_repost_history(
-    file_sha256: str,
-    *,
-    original_url: str,
-    download_info: dict,
-) -> tuple[dict, str | None, dict, float | None]:
-    if not REPOST_ASSESSMENT_ENABLED:
-        skipped = {
-            "isRepost": False,
-            "repostProbability": None,
-            "matches": [],
-            "rationale": "Repost assessment disabled or DATABASE_URL is not configured.",
-            "skipped": True,
-            "skipReason": "Repost assessment disabled or DATABASE_URL is not configured.",
-        }
-        return skipped, None, skipped, None
-
-    from storage.services.reposts import (
-        extract_repost_match_date,
-        json_safe_assessment,
-        repost_risk_score,
-        run_repost_assessment_sync,
-    )
-
-    assessment = run_repost_assessment_sync(
-        file_sha256=file_sha256,
-        embedding=None,
-        original_url=original_url,
-        uploader_handle=download_info.get("uploader_id") or download_info.get("channel"),
-        upload_date=download_info.get("upload_date"),
-    )
-    result = json_safe_assessment(assessment)
-    return (
-        assessment,
-        extract_repost_match_date(assessment),
-        result,
-        repost_risk_score(assessment),
-    )
-
-
-def _persist_analysis_record(
-    *,
-    original_url: str,
-    platform: str,
-    file_sha256: str,
-    download_info: dict,
-    transcript: dict,
-    raw_video_storage_path: str | None,
-    thumbnail_storage_path: str | None,
-    transcript_storage_path: str,
-    claim_analysis: dict,
-    thumbnail_clickbait_analysis: dict,
-    metadata_analysis: dict,
-    repost_result: dict,
-    repost_risk: float | None,
-    analysis_paths: dict[str, str | None],
-) -> dict:
-    if not DATABASE_SAVE_ENABLED:
-        return {
-            "ok": False,
-            "videoId": None,
-            "error": "Database save disabled or DATABASE_URL is not configured.",
-            "skipped": True,
-        }
-
-    from storage.services.db_videos import (
-        build_db_video_payload,
-        persist_db_video_sync,
-    )
-
-    payload = build_db_video_payload(
-        original_url=original_url,
-        platform=platform,
-        file_sha256=file_sha256,
-        download_info=download_info,
-        transcript_text=transcript.get("text"),
-        raw_video_path=raw_video_storage_path,
-        thumbnail_path=thumbnail_storage_path,
-        transcript_path=transcript_storage_path,
-        claim_analysis=claim_analysis,
-        thumbnail_clickbait_analysis=thumbnail_clickbait_analysis,
-        metadata_analysis=metadata_analysis,
-        repost_result=repost_result,
-        repost_risk=repost_risk,
-        analysis_paths=analysis_paths,
-    )
-    return persist_db_video_sync(payload)
 
 
 def select_keyframes_for_analysis(
@@ -384,7 +295,7 @@ def process_youtube_video(
 
         yield send({"type": "progress", "progress": 78, "stage": "Checking repost history"})
         repost_assessment, repost_match_date, repost_result, repost_risk = (
-            _assess_repost_history(
+            assess_repost_history(
                 file_sha256,
                 original_url=original_url,
                 download_info=download_info,
@@ -606,7 +517,7 @@ def process_youtube_video(
                 )
 
         yield send({"type": "progress", "progress": 97, "stage": "Saving analysis record"})
-        database_save = _persist_analysis_record(
+        database_save = persist_analysis_record(
             original_url=original_url,
             platform=platform,
             file_sha256=file_sha256,

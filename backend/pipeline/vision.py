@@ -241,7 +241,7 @@ def analyze_frame_with_vertex_ai(frame_path: Path, *, ocr_summary: str | None = 
             "Vertex AI vision is not configured. Set VERTEX_AI_PROJECT_ID."
         )
 
-    token, token_error = _get_vertex_access_token()
+    token, token_error = get_vertex_access_token()
     if token_error:
         return empty_vision_result(token_error)
 
@@ -325,7 +325,7 @@ def analyze_frame_authenticity(frame_path: Path) -> dict:
             "Vertex AI vision is not configured. Set VERTEX_AI_PROJECT_ID."
         )
 
-    token, token_error = _get_vertex_access_token()
+    token, token_error = get_vertex_access_token()
     if token_error:
         return empty_authenticity_result(token_error)
 
@@ -450,7 +450,7 @@ def analyze_event_window_consistency(frames: list[dict]) -> dict:
     if len(frames) < 2:
         return empty_event_consistency_result("Not enough frames for event-window consistency.")
 
-    token, token_error = _get_vertex_access_token()
+    token, token_error = get_vertex_access_token()
     if token_error:
         return empty_event_consistency_result(token_error)
 
@@ -583,7 +583,7 @@ def _probability(value: object) -> float | None:
     return None
 
 
-def _get_vertex_access_token() -> tuple[str | None, str | None]:
+def get_vertex_access_token() -> tuple[str | None, str | None]:
     try:
         from google.auth import default as google_auth_default
         from google.auth.transport.requests import Request as GoogleAuthRequest

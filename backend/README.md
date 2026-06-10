@@ -99,6 +99,8 @@ The `complete` result includes claim analysis, visual/temporal/thumbnail scores,
 
 ## Pipeline overview
 
+`pipeline/` contains analysis-only code. External I/O (Postgres, Supabase uploads, feedback persistence) lives in `adapters/` and is the only place that imports the top-level `storage` package.
+
 `pipeline/process.py` orchestrates the run:
 
 | Stage | Module | Output |
@@ -109,12 +111,12 @@ The `complete` result includes claim analysis, visual/temporal/thumbnail scores,
 | Temporal check | `temporal.py` | `temporal-consistency.json` |
 | Visual events | `visual_events.py` | `visual-event-analysis.json` |
 | Keyframes | `keyframes.py`, `ocr.py`, `vision.py` | `keyframe-analysis.json` |
-| Repost check | `storage/services/reposts.py` | Hash match vs `videos` table (needs `DATABASE_URL`) |
+| Repost check | `adapters/reposts.py` → `storage/` | Hash match vs `videos` table (needs `DATABASE_URL`) |
 | Metadata rules | `metadata_analyzer.py` | `metadata-analysis.json` |
 | Thumbnail | `thumbnail.py` | Thumbnail image + clickbait analysis |
 | Claim check | `claim_analysis.py` | `claim-analysis.json` (OpenAI + web search) |
-| Upload | `pipeline/storage.py` | Supabase Storage artifacts |
-| DB save | `storage/services/db_videos.py` | Upsert `public.videos` row |
+| Upload | `adapters/object_storage.py` | Supabase Storage artifacts |
+| DB save | `adapters/persistence.py` → `storage/` | Upsert `public.videos` row |
 
 ### Fast processing mode
 
