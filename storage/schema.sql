@@ -99,3 +99,23 @@ values
   ('thumbnails', 'thumbnails', false),
   ('analysis', 'analysis', false)
 on conflict (id) do update set public = excluded.public;
+
+do $$
+begin
+  create type feedback_label as enum ('Correct', 'Incorrect');
+exception
+  when duplicate_object then null;
+end $$;
+
+create table if not exists public.analysis_feedback (
+  id uuid primary key default gen_random_uuid(),
+  vid_id text not null,
+  label feedback_label not null,
+  comment text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists ix_analysis_feedback_vid_id
+  on public.analysis_feedback (vid_id);
+create index if not exists ix_analysis_feedback_created_at
+  on public.analysis_feedback (created_at);

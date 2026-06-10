@@ -8,7 +8,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 _backend_dir = Path(__file__).resolve().parent
@@ -37,6 +37,12 @@ class ProcessRequest(BaseModel):
     youtubeUrl: str | None = None
     videoUrl: str | None = None
     fastProcessingMode: bool | None = None
+
+
+class FeedbackRequest(BaseModel):
+    vid_id: str = ""
+    label: str = ""
+    comment: str = ""
 
 
 @app.get("/health")
@@ -76,6 +82,23 @@ async def process_youtube(payload: ProcessRequest, request: Request) -> Streamin
         media_type="application/x-ndjson; charset=utf-8",
         headers={"Cache-Control": "no-cache, no-transform"},
     )
+
+
+@app.post("/feedback")
+def submit_analysis_feedback(payload: FeedbackRequest) -> JSONResponse:
+    from pipeline.feedback import submit_feedback
+
+    result = submit_feedback(
+        vid_id=payload.vid_id,
+        label=payload.label,
+        comment=payload.comment,
+    )
+    status_code = 200
+    if result["status"] == "missing_fields":
+        status_code = 400
+    elif result["status"] == "storage_error":
+        status_code = 500
+    return JSONResponse(content=result, status_code=status_code)
 
 
 if __name__ == "__main__":

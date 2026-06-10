@@ -28,6 +28,11 @@ class Platform(str, enum.Enum):
     UNKNOWN = "unknown"
 
 
+class FeedbackLabel(str, enum.Enum):
+    CORRECT = "Correct"
+    INCORRECT = "Incorrect"
+
+
 class Video(Base):
     """A completed RealReel analysis for one submitted video."""
 
@@ -102,4 +107,36 @@ class Video(Base):
         Index("ix_videos_platform", "platform"),
         Index("ix_videos_created_at", "created_at"),
         Index("ix_videos_file_sha256", "file_sha256"),
+    )
+
+
+class AnalysisFeedback(Base):
+    """User feedback on whether an analysis result was correct."""
+
+    __tablename__ = "analysis_feedback"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    vid_id: Mapped[str] = mapped_column(Text, nullable=False)
+    label: Mapped[FeedbackLabel] = mapped_column(
+        SqlEnum(
+            FeedbackLabel,
+            name="feedback_label",
+            values_callable=lambda enum_class: [member.value for member in enum_class],
+        ),
+        nullable=False,
+    )
+    comment: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        Index("ix_analysis_feedback_vid_id", "vid_id"),
+        Index("ix_analysis_feedback_created_at", "created_at"),
     )

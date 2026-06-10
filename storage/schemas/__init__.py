@@ -1,5 +1,8 @@
 from storage.schemas.contracts import (
     AssetSignedUrlRequest,
+    FeedbackCreate,
+    FeedbackRead,
+    FeedbackSaveResult,
     SignedUrlResponse,
     SimilarVideoQuery,
     SimilarVideoRead,
@@ -9,6 +12,9 @@ from storage.schemas.contracts import (
 
 __all__ = [
     "AssetSignedUrlRequest",
+    "FeedbackCreate",
+    "FeedbackRead",
+    "FeedbackSaveResult",
     "SignedUrlResponse",
     "SimilarVideoQuery",
     "SimilarVideoRead",

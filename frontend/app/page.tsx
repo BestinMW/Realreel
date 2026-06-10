@@ -11,6 +11,9 @@ type PreviewSource =
 
 type ProcessingResult = {
   success: boolean;
+  databaseVideoId?: string | null;
+  externalId?: string | null;
+  sourceUrl?: string | null;
   claim?: string | null;
   claimVerdict?: string;
   claimConfidence?: number | null;
@@ -248,6 +251,10 @@ export default function Home() {
   const [progress, setProgress] = useState(0);
   const [progressStage, setProgressStage] = useState("");
   const [fastProcessingMode, setFastProcessingMode] = useState(false);
+  const [feedbackLabel, setFeedbackLabel] = useState<"Correct" | "Incorrect" | "">("");
+  const [feedbackComment, setFeedbackComment] = useState("");
+  const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem("fastProcessingMode");
@@ -272,6 +279,9 @@ export default function Home() {
     setIsProcessing(true);
     setError(null);
     setResults(null);
+    setFeedbackLabel("");
+    setFeedbackComment("");
+    setFeedbackMessage(null);
     setProgress(0);
     setProgressStage("Starting");
 
@@ -333,6 +343,53 @@ export default function Home() {
       setProgressStage("Failed");
     } finally {
       setIsProcessing(false);
+    }
+  }
+
+  function getFeedbackVidId() {
+    if (!results) {
+      return "";
+    }
+    return (
+      results.databaseVideoId ||
+      results.externalId ||
+      results.sourceUrl ||
+      videoUrl.trim()
+    );
+  }
+
+  async function handleFeedbackSubmit() {
+    const vidId = getFeedbackVidId();
+    if (!vidId || !feedbackLabel) {
+      setFeedbackMessage("empty feedback");
+      return;
+    }
+
+    setIsSubmittingFeedback(true);
+    setFeedbackMessage(null);
+
+    try {
+      const response = await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vid_id: vidId,
+          label: feedbackLabel,
+          comment: feedbackComment,
+        }),
+      });
+
+      const data = await response.json().catch(() => null);
+      const message = data?.message || "feedback to storage failure";
+      setFeedbackMessage(message);
+
+      if (data?.status === "success") {
+        setFeedbackComment("");
+      }
+    } catch {
+      setFeedbackMessage("feedback to storage failure");
+    } finally {
+      setIsSubmittingFeedback(false);
     }
   }
 
@@ -438,11 +495,66 @@ export default function Home() {
         )}
 
         {results?.success && (
-          <div className="scorePanel">
-            <span>Reliability Score</span>
-            <strong>{reliabilityScore !== null ? `${reliabilityScore}%` : "N/A"}</strong>
-            {reliabilityExplanation && <p>{reliabilityExplanation}</p>}
-          </div>
+          <>
+            <div className="scorePanel">
+              <span>Reliability Score</span>
+              <strong>{reliabilityScore !== null ? `${reliabilityScore}%` : "N/A"}</strong>
+              {reliabilityExplanation && <p>{reliabilityExplanation}</p>}
+            </div>
+
+            <section className="feedbackPanel">
+              <span>Was this analysis correct?</span>
+              <div className="feedbackChoices">
+                <label className="feedbackChoice">
+                  <input
+                    type="radio"
+                    name="feedback-label"
+                    value="Correct"
+                    checked={feedbackLabel === "Correct"}
+                    onChange={() => setFeedbackLabel("Correct")}
+                    disabled={isSubmittingFeedback}
+                  />
+                  Correct
+                </label>
+                <label className="feedbackChoice">
+                  <input
+                    type="radio"
+                    name="feedback-label"
+                    value="Incorrect"
+                    checked={feedbackLabel === "Incorrect"}
+                    onChange={() => setFeedbackLabel("Incorrect")}
+                    disabled={isSubmittingFeedback}
+                  />
+                  Incorrect
+                </label>
+              </div>
+              <label className="feedbackCommentLabel" htmlFor="feedback-comment">
+                Comment (optional)
+              </label>
+              <textarea
+                id="feedback-comment"
+                className="feedbackComment"
+                value={feedbackComment}
+                onChange={(event) => setFeedbackComment(event.target.value)}
+                placeholder="Tell us what was wrong or right..."
+                disabled={isSubmittingFeedback}
+                rows={3}
+              />
+              <button
+                type="button"
+                className="primaryButton"
+                onClick={handleFeedbackSubmit}
+                disabled={isSubmittingFeedback || !feedbackLabel}
+              >
+                {isSubmittingFeedback ? "Submitting..." : "Submit Feedback"}
+              </button>
+              {feedbackMessage && (
+                <p className={`feedbackMessage ${feedbackMessage === "feedback submitted" ? "feedbackSuccess" : "feedbackError"}`}>
+                  {feedbackMessage}
+                </p>
+              )}
+            </section>
+          </>
         )}
       </section>
     </main>

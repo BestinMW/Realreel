@@ -97,3 +97,25 @@ class AssetSignedUrlRequest(BaseModel):
 class SignedUrlResponse(BaseModel):
     signed_url: str
     expires_in: int
+
+
+class FeedbackCreate(BaseModel):
+    vid_id: str = Field(min_length=1)
+    label: str
+    comment: str | None = None
+
+
+class FeedbackRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    vid_id: str
+    label: str
+    comment: str | None
+    created_at: datetime
+
+
+class FeedbackSaveResult(BaseModel):
+    status: str
+    id: str | None = None
+    message: str | None = None

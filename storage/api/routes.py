@@ -10,12 +10,16 @@ from storage.assets.supabase import storage_service
 from storage.db.session import get_db_session
 from storage.schemas import (
     AssetSignedUrlRequest,
+    FeedbackCreate,
+    FeedbackRead,
+    FeedbackSaveResult,
     SignedUrlResponse,
     SimilarVideoQuery,
     SimilarVideoRead,
     VideoCreate,
     VideoRead,
 )
+from storage.services.feedback import save_feedback
 from storage.services import (
     delete_video_and_assets,
     find_video_by_sha256,
@@ -123,6 +127,21 @@ async def delete_video(
         await session.commit()
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/feedback", response_model=FeedbackSaveResult)
+async def create_feedback(
+    payload: FeedbackCreate,
+    session: AsyncSession = Depends(get_db_session),
+) -> FeedbackSaveResult:
+    result = await save_feedback(session, payload)
+    if result["status"] == "success":
+        await session.commit()
+        return FeedbackSaveResult(status="success", id=result["id"])
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail=result.get("message", "unable to save to storage"),
+    )
 
 
 def create_app() -> FastAPI:
